@@ -91,6 +91,8 @@ def write_musicxml(grid: dict, title: str, target: Path) -> None:
         instrument_id = f"P1-I{pitch}"
         instrument = el(part_definition, "score-instrument", id=instrument_id)
         el(instrument, "instrument-name", name)
+    for pitch in KIT:
+        instrument_id = f"P1-I{pitch}"
         midi = el(part_definition, "midi-instrument", id=instrument_id)
         el(midi, "midi-channel", 10)
         el(midi, "midi-unpitched", pitch + 1)  # MusicXML is 1-based; GM notes are 0-based.

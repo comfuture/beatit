@@ -248,18 +248,37 @@ def estimate_tempo(audio: Path) -> dict:
         }
     tempo, frames = librosa.beat.beat_track(y=signal, sr=sr, hop_length=512, trim=False)
     beats = librosa.frames_to_time(frames, sr=sr, hop_length=512)
-    bpm = float(np.asarray(tempo).reshape(-1)[0])
+    coarse_bpm = float(np.asarray(tempo).reshape(-1)[0])
+    bpm, offset, residual = fit_beat_grid(beats)
     reliable = len(beats) >= 4 and 30 <= bpm <= 300
     bpm = bpm if reliable else 120
     # Preserve the whole track. A beat tracker does not identify the downbeat/meter.
     # Use its phase near the track start rather than discard a possibly long intro.
-    offset = float(beats[0] % (60 / bpm)) if len(beats) else 0
     return {
         "estimated_bpm": round(bpm, 3),
         "estimated_offset": round(offset, 4),
+        "coarse_bpm": round(coarse_bpm, 3),
+        "beat_fit_residual_ms": round(residual * 1000, 1),
         "beat_times": [round(float(t), 4) for t in beats],
         "tempo_reliable": reliable,
     }
+
+
+def fit_beat_grid(beats) -> tuple[float, float, float]:
+    """Fit precise tempo/phase rather than use quantized STFT tempo bins."""
+    import numpy as np
+
+    beats = np.asarray(beats, dtype=float)
+    if len(beats) < 4:
+        return 120.0, 0.0, 0.0
+    indices = np.arange(len(beats))
+    period, intercept = np.polyfit(indices, beats, 1)
+    if period <= 0:
+        return 120.0, 0.0, 0.0
+    residual = float(np.sqrt(np.mean((beats - (indices * period + intercept)) ** 2)))
+    # No automatic downbeat inference; this is only a quarter-note phase.
+    offset = float(intercept % period)
+    return float(60 / period), offset, residual
 
 
 def write_midi(events: list[dict], target: Path, bpm: float):
@@ -317,6 +336,10 @@ def make_score(
     warnings.append(
         "박자와 첫 마디 위치는 자동 판별하지 않습니다. 템포 변화·스윙은 고정 격자에 근사하므로 원음과 대조하세요."
     )
+    if analysis.get("beat_fit_residual_ms", 0) > 60:
+        warnings.append(
+            "비트 위치가 일정한 템포에서 벗어납니다. 템포 변화나 누락된 비트를 확인하세요."
+        )
     if grid["dropped_before_offset"]:
         warnings.append(
             f"첫 박 앞의 {grid['dropped_before_offset']}개 타격이 악보에서 제외되었습니다. 박 시작 위치를 조정하세요."
@@ -329,6 +352,7 @@ def make_score(
         "grid": grid,
         "counts": counts,
         "renderer": rendered["renderer"],
+        "pdf": rendered["pdf"],
         "pages": rendered["pages"],
         "generation": generation.name,
         "warnings": warnings,
@@ -350,6 +374,10 @@ def run(directory: Path):
     request = json.loads((directory / "request.json").read_text())
     if request.get("revision"):
         analysis = json.loads((directory / "analysis.json").read_text())
+        if request.get("reestimate_tempo"):
+            progress("rhythm", 0.75, "캐시된 드럼에서 BPM과 비트 위치를 다시 계산합니다.")
+            analysis.update(estimate_tempo(directory / "drums.wav"))
+            save_json(directory / "analysis.json", analysis)
         events = request.get("events")
         if events is None:
             events = json.loads((directory / "events.json").read_text())
@@ -381,6 +409,7 @@ def run(directory: Path):
         "separation_device": separation_device,
         "transcription_device": transcription_device,
         "warnings": warnings + model_warnings,
+        "inference_elapsed_seconds": round(time.monotonic() - progress.started, 1),
     }
     save_json(directory / "analysis.json", analysis)
     save_json(directory / "events.json", events)

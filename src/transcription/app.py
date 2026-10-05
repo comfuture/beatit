@@ -198,6 +198,7 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
                 "score-bundle.zip",
                 "events.json",
                 "analysis.json",
+                "engraver.log",
             } | set(result.get("pages", []))
             if filename not in allowed or not result.get("generation"):
                 raise HTTPException(404, "파일이 없습니다.")

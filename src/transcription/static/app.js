@@ -162,7 +162,7 @@ async function renderResult(job) {
   $('counts').replaceChildren();
   for (const [name, count] of Object.entries(result.counts)) { const pill = document.createElement('span'); pill.className = 'count-pill'; const number = document.createElement('b'); number.textContent = count; pill.append(document.createTextNode(name), number); $('counts').append(pill); }
   for (const [id, name] of [['download-bundle', 'score-bundle.zip'], ['download-xml', 'score.musicxml'], ['download-midi', 'score.mid'], ['download-pdf', 'score.pdf']]) $(id).href = fileUrl(name, true);
-  $('download-pdf').hidden = result.renderer !== 'musescore';
+  $('download-pdf').hidden = !result.pdf;
   $('audio-source').value = 'drums.wav'; $('player').src = fileUrl('drums.wav');
   $('warnings').replaceChildren();
   for (const warning of result.warnings) { const p = document.createElement('p'); p.textContent = `↳ ${warning}`; $('warnings').append(p); }

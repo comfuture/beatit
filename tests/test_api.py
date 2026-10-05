@@ -73,3 +73,16 @@ def test_revision_is_queued_and_validates_audio_bounds(tmp_path):
         request = json.loads((directory / "request.json").read_text())
         assert request["revision"]
         assert request["events"][0]["pitch"] == 38
+
+
+def test_retry_after_engraving_failure_reuses_inference(tmp_path):
+    app = create_app(tmp_path, start_worker=False)
+    with TestClient(app) as client:
+        identifier = client.post("/api/jobs", files={"file": ("song.wav", b"x")}).json()["id"]
+        directory = tmp_path / identifier
+        (directory / "analysis.json").write_text("{}")
+        (directory / "events.json").write_text("[]")
+        (directory / "progress.json").write_text('{"stage":"engraving"}')
+        app.state.store.update(identifier, "failed")
+        assert client.post(f"/api/jobs/{identifier}/retry").status_code == 202
+        assert json.loads((directory / "request.json").read_text())["revision"]

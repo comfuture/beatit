@@ -1,8 +1,10 @@
+import json
 import os
 import platform
 import re
 import subprocess
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from .runtime import musescore_path
 
@@ -18,30 +20,63 @@ def render(xml: Path, destination: Path, requested: str = "auto") -> dict:
         env = {**os.environ, "SKIP_LIBJACK": "1"}
         if platform.system() == "Linux":
             env["QT_QPA_PLATFORM"] = "offscreen"
+        job = destination / "engrave-job.json"
+        job.write_text(
+            json.dumps(
+                [
+                    {
+                        "in": str(xml),
+                        "out": [str(destination / "score.svg"), str(destination / "score.pdf")],
+                    }
+                ]
+            )
+        )
         result = subprocess.run(
-            [binary, "-o", str(destination / "score.svg"), str(xml)],
+            [binary, "-j", str(job)],
             env=env,
             capture_output=True,
             text=True,
             timeout=180,
         )
+        (destination / "engraver.log").write_text(result.stdout + result.stderr, encoding="utf-8")
         pages = sorted(destination.glob("score*.svg"), key=_page_key)
-        if result.returncode or not pages:
+        valid_pages = bool(pages)
+        for page in pages:
+            try:
+                root = ET.parse(page).getroot()
+                valid_pages = valid_pages and root.tag.endswith("svg") and len(root) > 0
+            except ET.ParseError:
+                valid_pages = False
+        if not valid_pages:
             raise RuntimeError(
                 "MuseScore SVG 변환 실패: " + (result.stderr or result.stdout)[-2000:]
             )
-        # PDF is optional; SVG and MusicXML are the required deliverables.
-        pdf_result = subprocess.run(
-            [binary, "-o", str(destination / "score.pdf"), str(xml)],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        warning = (
-            [] if pdf_result.returncode == 0 else ["PDF 변환에 실패했습니다. SVG를 인쇄하세요."]
-        )
-        return {"renderer": "musescore", "pages": [p.name for p in pages], "warnings": warning}
+        # Some macOS builds abort during shutdown after producing valid outputs.
+        # Accept only outputs from this fresh generation after structural validation.
+        warning = []
+        if result.returncode:
+            warning.append(
+                f"MuseScore 종료 코드 {result.returncode}; 생성된 SVG 구조는 검증되었습니다. engraver.log를 확인하세요."
+            )
+        pdf = destination / "score.pdf"
+        pdf_valid = False
+        if pdf.is_file():
+            from pypdf import PdfReader
+            from pypdf.errors import PdfReadError
+
+            try:
+                pdf_valid = len(PdfReader(pdf).pages) == len(pages)
+            except (PdfReadError, ValueError, OSError):
+                pass
+        if not pdf_valid:
+            pdf.unlink(missing_ok=True)
+            warning.append("PDF 변환에 실패했습니다. SVG를 인쇄하세요.")
+        return {
+            "renderer": "musescore",
+            "pages": [p.name for p in pages],
+            "pdf": pdf_valid,
+            "warnings": warning,
+        }
     import verovio
 
     toolkit = verovio.toolkit()
@@ -66,7 +101,7 @@ def render(xml: Path, destination: Path, requested: str = "auto") -> dict:
         pages.append(page.name)
     if not pages:
         raise RuntimeError("악보 페이지가 생성되지 않았습니다.")
-    return {"renderer": "verovio", "pages": pages, "warnings": []}
+    return {"renderer": "verovio", "pages": pages, "pdf": False, "warnings": []}
 
 
 def _page_key(path: Path):
