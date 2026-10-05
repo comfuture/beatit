@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "drum-score"
+version = "0.1.0"
+description = "Local audio and video to percussion MusicXML and printable SVG"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+  "python-multipart>=0.0.20,<1",
+  "numpy>=1.26,<2",
+  "soundfile>=0.13,<1",
+  "librosa==0.11.0",
+  "pretty-midi>=0.2.10,<1",
+  "demucs==4.1.0",
+  "torch==2.8.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+  "torch==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "adtof-pytorch",
+  "verovio>=5.6,<7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.11,<1"]
+
+[project.scripts]
+drum-score = "transcription.cli:main"
+
+[tool.uv.sources]
+adtof-pytorch = { git = "https://github.com/xavriley/ADTOF-pytorch", rev = "85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/transcription"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
