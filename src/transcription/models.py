@@ -1,0 +1,27 @@
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class Options(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    bpm: float | None = Field(default=None, ge=30, le=300)
+    offset: float | None = Field(default=None, ge=0, le=120)
+    meter: Literal["4/4", "3/4", "6/8", "7/8"] = "4/4"
+    grid: Literal["16", "8", "triplet"] = "16"
+    device: Literal["auto", "cpu", "mps", "cuda"] = "auto"
+    renderer: Literal["auto", "musescore", "verovio"] = "auto"
+    source: Literal["mix", "drums"] = "mix"
+    sensitivity: float = Field(default=1, ge=0.5, le=1.5)
+
+
+class Event(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    time: float = Field(ge=0, le=7200)
+    pitch: Literal[35, 38, 47, 42, 49]
+    strength: float = Field(default=0.7, ge=0, le=1)
+
+
+class Revision(BaseModel):
+    options: Options
+    events: list[Event] | None = Field(default=None, max_length=100000)
