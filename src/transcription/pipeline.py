@@ -281,10 +281,12 @@ def fit_beat_grid(beats) -> tuple[float, float, float]:
     return float(60 / period), offset, residual
 
 
-def write_midi(events: list[dict], target: Path, bpm: float):
+def write_midi(events: list[dict], target: Path, bpm: float, meter: str = "4/4"):
     import pretty_midi
 
     midi = pretty_midi.PrettyMIDI(initial_tempo=bpm)
+    numerator, denominator = map(int, meter.split("/"))
+    midi.time_signature_changes.append(pretty_midi.TimeSignature(numerator, denominator, 0))
     drums = pretty_midi.Instrument(program=0, is_drum=True, name="Drum set")
     for event in events:
         onset = event.get("quantized_time", event["time"])
@@ -318,8 +320,8 @@ def make_score(
     generation = directory / ("render-" + str(time.time_ns()))
     generation.mkdir()
     write_musicxml(grid, Path(request["filename"]).stem, generation / "score.musicxml")
-    write_midi(grid["events"], generation / "score.mid", grid["bpm"])
-    write_midi(events, generation / "performance.mid", grid["bpm"])
+    write_midi(grid["events"], generation / "score.mid", grid["bpm"], grid["meter"])
+    write_midi(events, generation / "performance.mid", grid["bpm"], grid["meter"])
     save_json(generation / "events.json", events)
     progress("engraving", 0.87, "출력용 SVG 페이지를 조판합니다.")
     rendered = render(generation / "score.musicxml", generation, options.renderer)
@@ -353,6 +355,7 @@ def make_score(
         "counts": counts,
         "renderer": rendered["renderer"],
         "pdf": rendered["pdf"],
+        "engraver_exit_code": rendered.get("exit_code", 0),
         "pages": rendered["pages"],
         "generation": generation.name,
         "warnings": warnings,

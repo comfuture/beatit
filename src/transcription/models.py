@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Options(BaseModel):
@@ -13,6 +13,12 @@ class Options(BaseModel):
     renderer: Literal["auto", "musescore", "verovio"] = "auto"
     source: Literal["mix", "drums"] = "mix"
     sensitivity: float = Field(default=1, ge=0.5, le=1.5)
+
+    @model_validator(mode="after")
+    def validate_grid(self):
+        if self.meter == "7/8" and self.grid == "triplet":
+            raise ValueError("7/8 박자에서는 8분 또는 16분음표 격자를 선택하세요.")
+        return self
 
 
 class Event(BaseModel):

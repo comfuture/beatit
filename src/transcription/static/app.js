@@ -119,6 +119,7 @@ async function showJob(job) {
   if (job.result && resultKey !== `${job.id}:${job.result.generation}`) {
     resultKey = `${job.id}:${job.result.generation}`; await renderResult(job);
   } else if (!job.result) $('result').hidden = true;
+  else if (!busy()) renderEditor();
 }
 function renderProgress(job) {
   const progress = job?.progress || { progress: 0, stage: 'queued', message: '파일을 선택하면 분석을 시작할 수 있습니다.' };
@@ -135,7 +136,7 @@ function renderProgress(job) {
   const fraction = job?.status === 'completed' ? 1 : progress.progress;
   $('progress-bar').style.width = `${fraction * 100}%`; $('progress-percent').textContent = `${Math.round(fraction * 100)}%`;
   $('progress-message').textContent = job?.status === 'cancelled' ? '분석이 취소되었습니다.' : progress.message;
-  $('elapsed').textContent = progress.elapsed_seconds ? `처리 시간 ${progress.elapsed_seconds.toFixed(0)}초 · 단계별 진행률은 추정치입니다.` : '첫 실행에는 모델 다운로드가 필요합니다.';
+  $('elapsed').textContent = progress.elapsed_seconds ? `최근 실행 ${progress.elapsed_seconds.toFixed(0)}초 · 재시도는 저장된 분석을 재사용할 수 있습니다.` : '첫 실행에는 모델 다운로드가 필요합니다.';
   $('cancel').hidden = !['running', 'queued'].includes(job?.status);
   $('retry').hidden = !['failed', 'cancelled'].includes(job?.status);
   $('log-link').hidden = !job; $('log-link').href = job ? `/api/jobs/${job.id}/log` : '#';
@@ -168,7 +169,9 @@ async function renderResult(job) {
   for (const warning of result.warnings) { const p = document.createElement('p'); p.textContent = `↳ ${warning}`; $('warnings').append(p); }
   for (const key of ['bpm', 'offset', 'meter', 'grid']) $('revision-form').elements[key].value = result.options[key];
   $('editor-bar').max = grid.bars; $('editor-bar').value = 1;
-  draftEvents = await api(fileUrl('events.json')); editCount = 0; renderEditor();
+  const events = await api(`/api/jobs/${job.id}/files/events.json`);
+  if (currentId !== job.id || resultKey !== `${job.id}:${result.generation}`) return;
+  draftEvents = events; editCount = 0; renderEditor();
   $('score-pages').replaceChildren();
   for (const [index, page] of result.pages.entries()) {
     const wrapper = document.createElement('div'); wrapper.className = 'score-page';

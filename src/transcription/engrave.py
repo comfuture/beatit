@@ -48,15 +48,16 @@ def render(xml: Path, destination: Path, requested: str = "auto") -> dict:
             except ET.ParseError:
                 valid_pages = False
         if not valid_pages:
+            print(result.stdout + result.stderr, flush=True)
             raise RuntimeError(
-                "MuseScore SVG 변환 실패: " + (result.stderr or result.stdout)[-2000:]
+                "MuseScore SVG 변환에 실패했습니다. 작업 로그를 확인한 후 다시 시도하세요."
             )
         # Some macOS builds abort during shutdown after producing valid outputs.
         # Accept only outputs from this fresh generation after structural validation.
         warning = []
         if result.returncode:
             warning.append(
-                f"MuseScore 종료 코드 {result.returncode}; 생성된 SVG 구조는 검증되었습니다. engraver.log를 확인하세요."
+                "MuseScore 종료 경고가 발생했지만 출력 파일은 검증되었습니다. 자세한 내용은 렌더러 로그를 확인하세요."
             )
         pdf = destination / "score.pdf"
         pdf_valid = False
@@ -75,6 +76,7 @@ def render(xml: Path, destination: Path, requested: str = "auto") -> dict:
             "renderer": "musescore",
             "pages": [p.name for p in pages],
             "pdf": pdf_valid,
+            "exit_code": result.returncode,
             "warnings": warning,
         }
     import verovio
