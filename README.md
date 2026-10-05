@@ -139,6 +139,7 @@ uv run pytest -q
 CI 정의는 macOS 및 Ubuntu에서 의미 검증·API 검증·Verovio SVG 검증을 수행합니다.
 실제 모델·FFmpeg 통합 확인은 `scripts/smoke_pipeline.py`를 사용할 수 있습니다.
 첫 전체 곡 실험은 [실험 기록](docs/experiment.md)에 기록합니다.
+두 번째 음원 「10CM - 너에게 닿기를」 결과는 [재실험 기록](docs/experiment-02.md)에 있습니다.
 
 오픈 소스 선택 근거, upstream commit과 라이선스 조건은
 [아키텍처 검토](docs/architecture.md)에 있습니다. ADTOF 원본의 CC BY-NC-SA 조건과
