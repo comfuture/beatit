@@ -1,4 +1,5 @@
 import os
+import platform
 import re
 import subprocess
 from pathlib import Path
@@ -14,9 +15,11 @@ def render(xml: Path, destination: Path, requested: str = "auto") -> dict:
             "MuseScore가 없습니다. MUSESCORE_BIN을 설정하거나 자동 렌더러를 선택하세요."
         )
     if binary and requested != "verovio":
-        env = {**os.environ, "QT_QPA_PLATFORM": "offscreen", "SKIP_LIBJACK": "1"}
+        env = {**os.environ, "SKIP_LIBJACK": "1"}
+        if platform.system() == "Linux":
+            env["QT_QPA_PLATFORM"] = "offscreen"
         result = subprocess.run(
-            [binary, "-s", "-o", str(destination / "score.svg"), str(xml)],
+            [binary, "-o", str(destination / "score.svg"), str(xml)],
             env=env,
             capture_output=True,
             text=True,
@@ -29,7 +32,7 @@ def render(xml: Path, destination: Path, requested: str = "auto") -> dict:
             )
         # PDF is optional; SVG and MusicXML are the required deliverables.
         pdf_result = subprocess.run(
-            [binary, "-s", "-o", str(destination / "score.pdf"), str(xml)],
+            [binary, "-o", str(destination / "score.pdf"), str(xml)],
             env=env,
             capture_output=True,
             text=True,
