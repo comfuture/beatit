@@ -3,7 +3,8 @@
 A local web app that transcribes drums from audio or video into editable **MusicXML**,
 printable **SVG**, and **A4 PDF** when MuseScore is installed. Drop a file into the
 browser, start transcription, then preview, adjust, and download the score.
-MIDI, detected onsets, and a separated drum track are also available.
+MIDI, detected onsets, a separated drum track, and per-instrument kit stems are also
+available.
 
 **Only use recordings you own the rights to, or have explicit permission to process
 and transcribe.** You are responsible for obtaining the necessary rights to the input
