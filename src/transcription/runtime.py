@@ -41,6 +41,8 @@ def capabilities() -> dict:
             35: "Kick",
             38: "Snare",
             47: "Tom",
+            45: "Low tom",
+            50: "High tom",
             42: "Hi-hat",
             46: "Open hi-hat",
             49: "Cymbal",

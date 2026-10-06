@@ -34,7 +34,16 @@ def test_every_voice_fills_measure_and_chords_do_not_advance_time(tmp_path, mete
             )
         assert int(measure.findtext("backup/duration")) == grid["bar_ticks"]
     instruments = root.findall("part-list/score-part/midi-instrument")
-    assert {int(i.findtext("midi-unpitched")) for i in instruments} == {36, 39, 43, 47, 48, 50}
+    assert {int(i.findtext("midi-unpitched")) for i in instruments} == {
+        36,
+        39,
+        43,
+        46,
+        47,
+        48,
+        50,
+        51,
+    }
     assert all(i.findtext("midi-channel") == "10" for i in instruments)
     assert len(root.findall(".//unpitched")) == len(grid["events"])
 
@@ -52,6 +61,23 @@ def test_open_hi_hat_has_open_articulation_and_closed_does_not(tmp_path):
     assert notes[0].find("notations/technical/open") is None
     assert notes[1].find("notations/technical/open") is not None
     assert notes[1].findtext("notehead") == "x"
+
+
+def test_tom_heights_have_distinct_staff_positions_and_gm_mapping(tmp_path):
+    events = [
+        {"time": i * 0.5, "pitch": pitch, "strength": 0.8} for i, pitch in enumerate((45, 47, 50))
+    ]
+    grid = quantize(events, 2, Options(bpm=120, offset=0))
+    path = tmp_path / "score.musicxml"
+    write_musicxml(grid, "Tom heights", path)
+    root = ET.parse(path).getroot()
+    notes = [n for n in root.iter("note") if n.find("unpitched") is not None]
+    assert [n.find("instrument").get("id") for n in notes] == ["P1-I45", "P1-I47", "P1-I50"]
+    assert [n.findtext("unpitched/display-step") for n in notes] == ["B", "D", "E"]
+    mapping = {
+        i.get("id"): int(i.findtext("midi-unpitched")) for i in root.findall(".//midi-instrument")
+    }
+    assert [mapping[n.find("instrument").get("id")] for n in notes] == [46, 48, 51]
 
 
 def test_negative_offset_keeps_pickup_hits():

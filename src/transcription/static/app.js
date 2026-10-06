@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const stages = ['converting', 'separating', 'transcribing', 'engraving'];
 const labels = { queued: '대기', running: '분석 중', completed: '완료', failed: '실패', cancelled: '취소' };
-const kit = [[49, 'Cymbal'], [46, 'Open HH'], [42, 'Hi-hat'], [47, 'Tom'], [38, 'Snare'], [35, 'Kick']];
+const kit = [[49, 'Cymbal'], [46, 'Open HH'], [42, 'Hi-hat'], [50, 'High tom'], [47, 'Tom'], [45, 'Low tom'], [38, 'Snare'], [35, 'Kick']];
 let selectedFile = null, currentId = null, currentJob = null, system = null;
 let timer = null, resultKey = null, draftEvents = [], editCount = 0, uploading = false;
 
@@ -30,6 +30,7 @@ function readOptions(form) {
   const values = Object.fromEntries(new FormData(form));
   for (const field of ['bpm', 'offset']) values[field] = values[field] === '' ? null : Number(values[field]);
   if ('sensitivity' in values) values.sensitivity = Number(values.sensitivity);
+  if ('tom_refinement' in values) values.tom_refinement = values.tom_refinement === 'true';
   if (values.meter === '7/8' && values.grid === 'triplet') throw new Error('7/8 박자에서는 8분 또는 16분음표 격자를 선택하세요.');
   return values;
 }
@@ -124,7 +125,7 @@ async function showJob(job) {
 function renderProgress(job) {
   const progress = job?.progress || { progress: 0, stage: 'queued', message: '파일을 선택하면 분석을 시작할 수 있습니다.' };
   let index = stages.indexOf(progress.stage);
-  if (progress.stage === 'rhythm') index = 2;
+  if (['rhythm', 'refining'].includes(progress.stage)) index = 2;
   if (job?.status === 'completed') index = 4;
   document.querySelectorAll('.pipeline-step').forEach((element, i) => {
     element.classList.toggle('done', i < index);
@@ -164,6 +165,8 @@ async function renderResult(job) {
   for (const [name, count] of Object.entries(result.counts)) { const pill = document.createElement('span'); pill.className = 'count-pill'; const number = document.createElement('b'); number.textContent = count; pill.append(document.createTextNode(name), number); $('counts').append(pill); }
   for (const [id, name] of [['download-bundle', 'score-bundle.zip'], ['download-xml', 'score.musicxml'], ['download-midi', 'score.mid'], ['download-pdf', 'score.pdf']]) $(id).href = fileUrl(name, true);
   $('download-pdf').hidden = !result.pdf;
+  $('download-tom-report').href = fileUrl('tom-refinement.json', true);
+  $('download-tom-report').hidden = !result.tom_refinement?.enabled;
   const sources = [['drums.wav', '분리된 드럼'], ['audio.wav', '전체 오디오']];
   for (const [name, label] of [['kick', '킥'], ['snare', '스네어'], ['toms', '탐'], ['hh', '하이햇'], ['cymbals', '심벌']]) {
     const file = `stem-${name}.flac`;
@@ -176,6 +179,7 @@ async function renderResult(job) {
   $('warnings').replaceChildren();
   for (const warning of result.warnings) { const p = document.createElement('p'); p.textContent = `↳ ${warning}`; $('warnings').append(p); }
   for (const key of ['bpm', 'offset', 'meter', 'grid']) $('revision-form').elements[key].value = result.options[key];
+  $('revision-form').elements.tom_refinement.value = String(result.options.tom_refinement || false);
   $('editor-bar').max = grid.bars; $('editor-bar').value = 1;
   const events = await api(`/api/jobs/${job.id}/files/events.json`);
   if (currentId !== job.id || resultKey !== `${job.id}:${result.generation}`) return;

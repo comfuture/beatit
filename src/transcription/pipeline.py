@@ -284,6 +284,15 @@ def make_score(
     directory: Path, request: dict, analysis: dict, events: list[dict], progress: Progress
 ) -> dict:
     options = Options.model_validate(request["options"])
+    from .tom_refinement import refine_toms, restore_inferred_toms
+
+    events = restore_inferred_toms(events)
+    tom_report = {"enabled": False}
+    if options.tom_refinement:
+        progress("refining", 0.78, "저장된 탐 스템에서 고음·저음 탐을 보정합니다.")
+        events, tom_report = refine_toms(
+            events, directory / "stem-toms.flac", directory / "stem-kick.flac"
+        )
     bpm = options.bpm or analysis["estimated_bpm"]
     aligned = False
     if options.offset is not None:
@@ -307,10 +316,22 @@ def make_score(
     write_midi(grid["events"], generation / "score.mid", grid["bpm"], grid["meter"])
     write_midi(events, generation / "performance.mid", grid["bpm"], grid["meter"])
     save_json(generation / "events.json", events)
+    if options.tom_refinement:
+        save_json(generation / "tom-refinement.json", tom_report)
     progress("engraving", 0.87, "출력용 SVG 페이지를 조판합니다.")
     rendered = render(generation / "score.musicxml", generation, options.renderer)
     counts = {name: sum(e["pitch"] == pitch for e in events) for pitch, (name, *_) in KIT.items()}
     warnings = list(analysis.get("warnings", [])) + rendered["warnings"]
+    if options.tom_refinement:
+        if tom_report["status"] == "missing_stems":
+            warnings.append(
+                "탐·킥 스템이 없어 탐 높이를 보정하지 못했습니다. 새 분석을 실행하세요."
+            )
+        else:
+            warnings.append(
+                f"탐 높이 보정: 저음 {tom_report['low_count']}개, 고음 {tom_report['high_count']}개, "
+                f"미분류 {tom_report['unresolved_count']}개. 상대 음색 기반 자동 초안이므로 원음과 대조하세요."
+            )
     if not events:
         warnings.append(
             "드럼 타격을 검출하지 못했습니다. 감도를 높이거나 드럼 전용 입력을 확인하세요."
@@ -353,6 +374,7 @@ def make_score(
         "engraver_exit_code": rendered.get("exit_code", 0),
         "pages": rendered["pages"],
         "downbeat_aligned": aligned,
+        "tom_refinement": {key: value for key, value in tom_report.items() if key != "hits"},
         "generation": generation.name,
         "warnings": warnings,
         "event_count": len(events),
