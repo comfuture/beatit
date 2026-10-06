@@ -9,8 +9,11 @@ from pathlib import Path
 
 from .engrave import render
 from .models import Options
+from .rhythm import align_downbeat, estimate_tempo
 from .runtime import select_device
 from .score import KIT, quantize, write_musicxml
+
+STEMS = ("kick", "snare", "toms", "hh", "cymbals")
 
 MAX_DURATION = float(os.environ.get("MAX_DURATION_SECONDS", "1800"))
 
@@ -157,128 +160,85 @@ def separate(
     return destination, device, warnings
 
 
-def detect(
-    audio: Path,
+def transcribe(
+    drums: Path,
     directory: Path,
     device: str,
     sensitivity: float,
     progress: Progress,
     allow_fallback: bool,
 ):
+    """DrumSep kit stems + ADTOF on kit and stems -> onset events with articulation/velocity."""
     import numpy as np
+    import soundfile as sf
     import torch
-    from adtof_pytorch import (
-        FRAME_RNN_THRESHOLDS,
-        LABELS_5,
-        PeakPicker,
-        calculate_n_bins,
-        create_frame_rnn_model,
-        get_default_weights_path,
-        load_audio_for_model,
-    )
 
-    # Never run with silently missing/randomly initialized model parameters.
-    weights = Path(get_default_weights_path())
-    if not weights.is_file():
-        raise RuntimeError("ADTOF 모델 가중치가 없습니다. uv sync를 다시 실행하세요.")
+    from . import detection, drumsep
+
+    audio, rate = sf.read(drums, dtype="float32", always_2d=True)
+    if rate != drumsep.SAMPLE_RATE:
+        raise RuntimeError(f"드럼 오디오는 {drumsep.SAMPLE_RATE} Hz여야 합니다.")
+    audio = audio.T
     torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
     torch.manual_seed(0)
-    model = create_frame_rnn_model(calculate_n_bins()).eval()
-    state = torch.load(weights, map_location="cpu", weights_only=True)
-    model.load_state_dict(state.get("model_weights", state), strict=True)
-    progress("transcribing", 0.45, "ADTOF 입력 스펙트로그램을 만듭니다.")
-    inputs = load_audio_for_model(str(audio))
+    labels = {
+        "kit": "전체 드럼",
+        "kick": "킥",
+        "snare": "스네어",
+        "toms": "탐",
+        "hh": "하이햇",
+        "cymbals": "심벌",
+    }
 
     def infer(selected):
-        model.to(selected)
-        frames = inputs.shape[1]
-        predictions = []
-        block, context = 3000, 100  # 30s windows with 1s context on both edges.
-        with torch.inference_mode():
-            for start in range(0, frames, block):
-                end = min(frames, start + block)
-                left, right = max(0, start - context), min(frames, end + context)
-                prediction = model(inputs[:, left:right].to(selected)).cpu().numpy()[0]
-                predictions.append(prediction[start - left : end - left])
-                progress(
+        progress("separating", 0.36, f"DrumSep으로 악기별 드럼을 분리합니다 · {selected.upper()}")
+        separator = drumsep.load_model(selected)
+        stems = drumsep.separate(
+            audio,
+            separator,
+            selected,
+            lambda done: progress(
+                "separating", 0.36 + 0.16 * done, f"악기별 드럼 분리 · {done * 100:.0f}%"
+            ),
+        )
+        del separator
+        model = detection.load_adtof()
+        names = ["kit", *drumsep.STEMS]
+        activations = {}
+        for index, name in enumerate(names):
+            source = audio if name == "kit" else stems[name]
+            activations[name] = detection.activations(
+                model,
+                detection.spectrogram(source),
+                selected,
+                lambda done, index=index, name=name: progress(
                     "transcribing",
-                    0.48 + 0.24 * end / frames,
-                    f"드럼 타격 분석 · {end / 100:.1f} / {frames / 100:.1f}초 · {selected.upper()}",
-                )
-        return np.concatenate(predictions, axis=0)
+                    0.53 + 0.2 * (index + done) / len(names),
+                    f"드럼 타격 분석 · {labels[name]} · {selected.upper()}",
+                ),
+            )
+        return stems, activations
 
     warnings = []
     try:
-        activations = infer(device)
+        stems, activations = infer(device)
     except RuntimeError:
         if device == "cpu" or not allow_fallback:
             raise
-        warnings.append(f"ADTOF {device.upper()} 실행 실패로 CPU에서 다시 실행했습니다.")
+        warnings.append(f"DrumSep/ADTOF {device.upper()} 실행 실패로 CPU에서 다시 실행했습니다.")
         device = "cpu"
-        activations = infer(device)
-    np.save(directory / "activations.npy", activations)
-    thresholds = [min(0.95, value / sensitivity) for value in FRAME_RNN_THRESHOLDS]
-    peaks = PeakPicker(thresholds=thresholds).pick(activations, labels=LABELS_5)[0]
-    events = []
-    for class_index, pitch in enumerate(LABELS_5):
-        for onset in peaks[pitch]:
-            frame = min(round(onset * 100), len(activations) - 1)
-            events.append(
-                {
-                    "time": round(onset, 4),
-                    "pitch": pitch,
-                    "strength": round(float(activations[frame, class_index]), 4),
-                }
-            )
-    events.sort(key=lambda e: (e["time"], e["pitch"]))
+        stems, activations = infer(device)
+    loudness = {name: detection.loudness_db(stems[name]) for name in drumsep.STEMS}
+    events, combined = detection.detect_events(
+        activations["kit"],
+        {name: activations[name] for name in drumsep.STEMS},
+        loudness,
+        sensitivity,
+    )
+    np.save(directory / "activations.npy", combined)
+    for name, wave in stems.items():
+        sf.write(directory / f"stem-{name}.flac", np.clip(wave, -1, 1).T, rate, subtype="PCM_16")
     return events, device, warnings
-
-
-def estimate_tempo(audio: Path) -> dict:
-    import librosa
-    import numpy as np
-
-    signal, sr = librosa.load(audio, sr=22050, mono=True)
-    if np.max(np.abs(signal)) < 1e-5:
-        return {
-            "estimated_bpm": 120.0,
-            "estimated_offset": 0.0,
-            "beat_times": [],
-            "tempo_reliable": False,
-        }
-    tempo, frames = librosa.beat.beat_track(y=signal, sr=sr, hop_length=512, trim=False)
-    beats = librosa.frames_to_time(frames, sr=sr, hop_length=512)
-    coarse_bpm = float(np.asarray(tempo).reshape(-1)[0])
-    bpm, offset, residual = fit_beat_grid(beats)
-    reliable = len(beats) >= 4 and 30 <= bpm <= 300
-    bpm = bpm if reliable else 120
-    # Preserve the whole track. A beat tracker does not identify the downbeat/meter.
-    # Use its phase near the track start rather than discard a possibly long intro.
-    return {
-        "estimated_bpm": round(bpm, 3),
-        "estimated_offset": round(offset, 4),
-        "coarse_bpm": round(coarse_bpm, 3),
-        "beat_fit_residual_ms": round(residual * 1000, 1),
-        "beat_times": [round(float(t), 4) for t in beats],
-        "tempo_reliable": reliable,
-    }
-
-
-def fit_beat_grid(beats) -> tuple[float, float, float]:
-    """Fit precise tempo/phase rather than use quantized STFT tempo bins."""
-    import numpy as np
-
-    beats = np.asarray(beats, dtype=float)
-    if len(beats) < 4:
-        return 120.0, 0.0, 0.0
-    indices = np.arange(len(beats))
-    period, intercept = np.polyfit(indices, beats, 1)
-    if period <= 0:
-        return 120.0, 0.0, 0.0
-    residual = float(np.sqrt(np.mean((beats - (indices * period + intercept)) ** 2)))
-    # No automatic downbeat inference; this is only a quarter-note phase.
-    offset = float(intercept % period)
-    return float(60 / period), offset, residual
 
 
 def write_midi(events: list[dict], target: Path, bpm: float, meter: str = "4/4"):
@@ -289,11 +249,12 @@ def write_midi(events: list[dict], target: Path, bpm: float, meter: str = "4/4")
     midi.time_signature_changes.append(pretty_midi.TimeSignature(numerator, denominator, 0))
     drums = pretty_midi.Instrument(program=0, is_drum=True, name="Drum set")
     for event in events:
-        onset = event.get("quantized_time", event["time"])
+        onset = max(0.0, event.get("quantized_time", event["time"]))
+        velocity = event.get("velocity") or round(event["strength"] * 110 + 17)
         drums.notes.append(
             pretty_midi.Note(
                 pitch=event["pitch"],
-                velocity=max(1, min(127, round(event["strength"] * 110 + 17))),
+                velocity=max(1, min(127, int(velocity))),
                 start=onset,
                 end=onset + 0.08,
             )
@@ -306,14 +267,20 @@ def make_score(
     directory: Path, request: dict, analysis: dict, events: list[dict], progress: Progress
 ) -> dict:
     options = Options.model_validate(request["options"])
-    resolved = options.model_copy(
-        update={
-            "bpm": options.bpm or analysis["estimated_bpm"],
-            "offset": options.offset
-            if options.offset is not None
-            else analysis["estimated_offset"],
-        }
-    )
+    bpm = options.bpm or analysis["estimated_bpm"]
+    aligned = False
+    if options.offset is not None:
+        offset = options.offset
+    else:
+        # Bar 1 starts on the tracked downbeat; earlier hits become a pickup bar.
+        offset, aligned = align_downbeat(
+            analysis["estimated_offset"],
+            bpm,
+            analysis.get("downbeat_times", []),
+            options.meter,
+            min((event["time"] for event in events), default=None),
+        )
+    resolved = options.model_copy(update={"bpm": bpm, "offset": round(offset, 4)})
     progress("engraving", 0.8, "타격을 리듬 격자에 맞추고 MusicXML을 생성합니다.")
     grid = quantize(events, analysis["duration"], resolved)
     # Publish a complete generation atomically; never expose half-written revisions.
@@ -335,9 +302,20 @@ def make_score(
         warnings.append(
             "BPM을 안정적으로 추정하지 못해 120 BPM으로 표시합니다. BPM을 직접 지정하세요."
         )
-    warnings.append(
-        "박자와 첫 마디 위치는 자동 판별하지 않습니다. 템포 변화·스윙은 고정 격자에 근사하므로 원음과 대조하세요."
-    )
+    if aligned:
+        warnings.append(
+            "첫 마디 위치는 Beat This! 다운비트에 맞췄습니다. 박자는 선택한 값을 사용하며 템포 변화·스윙은 고정 격자에 근사합니다."
+        )
+    elif options.offset is None:
+        warnings.append(
+            "첫 마디 위치를 자동으로 맞추지 못했습니다. 템포 변화·스윙은 고정 격자에 근사하므로 원음과 대조하세요."
+        )
+    numerator, denominator = map(int, options.meter.split("/"))
+    estimated_beats = analysis.get("downbeat_beats_per_bar")
+    if denominator == 4 and estimated_beats in (3, 4) and estimated_beats != numerator:
+        warnings.append(
+            f"다운비트 간격이 {estimated_beats}박으로 추정됩니다. 박자 설정을 확인하세요."
+        )
     if analysis.get("beat_fit_residual_ms", 0) > 60:
         warnings.append(
             "비트 위치가 일정한 템포에서 벗어납니다. 템포 변화나 누락된 비트를 확인하세요."
@@ -357,6 +335,7 @@ def make_score(
         "pdf": rendered["pdf"],
         "engraver_exit_code": rendered.get("exit_code", 0),
         "pages": rendered["pages"],
+        "downbeat_aligned": aligned,
         "generation": generation.name,
         "warnings": warnings,
         "event_count": len(events),
@@ -378,8 +357,19 @@ def run(directory: Path):
     if request.get("revision"):
         analysis = json.loads((directory / "analysis.json").read_text())
         if request.get("reestimate_tempo"):
-            progress("rhythm", 0.75, "캐시된 드럼에서 BPM과 비트 위치를 다시 계산합니다.")
-            analysis.update(estimate_tempo(directory / "drums.wav"))
+            progress("rhythm", 0.75, "캐시된 오디오에서 BPM과 비트 위치를 다시 계산합니다.")
+            options = Options.model_validate(request["options"])
+            drums = directory / "drums.wav"
+            cached = json.loads((directory / "events.json").read_text())
+            tempo, tempo_warnings = estimate_tempo(
+                directory / "audio.wav" if options.source == "mix" else drums,
+                drums,
+                [event["time"] for event in cached],
+                select_device(options.device),
+                options.device == "auto",
+            )
+            analysis.update(tempo)
+            analysis["warnings"] = list(analysis.get("warnings", [])) + tempo_warnings
             save_json(directory / "analysis.json", analysis)
         events = request.get("events")
         if events is None:
@@ -401,17 +391,25 @@ def run(directory: Path):
     else:
         drums = directory / "drums.wav"
         shutil.copyfile(directory / "audio.wav", drums)
-    events, transcription_device, model_warnings = detect(
+    events, transcription_device, model_warnings = transcribe(
         drums, directory, device, options.sensitivity, progress, options.device == "auto"
     )
     events = [e for e in events if e["time"] < duration]
-    progress("rhythm", 0.75, "BPM과 비트 위치를 분석합니다.")
+    progress("rhythm", 0.75, "Beat This!로 비트와 다운비트를 분석합니다.")
+    tempo, tempo_warnings = estimate_tempo(
+        directory / "audio.wav" if options.source == "mix" else drums,
+        drums,
+        [event["time"] for event in events],
+        device,
+        options.device == "auto",
+    )
     analysis = {
-        **estimate_tempo(drums),
+        **tempo,
         "duration": round(duration, 4),
         "separation_device": separation_device,
         "transcription_device": transcription_device,
-        "warnings": warnings + model_warnings,
+        "stems": [f"stem-{name}.flac" for name in STEMS],
+        "warnings": warnings + model_warnings + tempo_warnings,
         "inference_elapsed_seconds": round(time.monotonic() - progress.started, 1),
     }
     save_json(directory / "analysis.json", analysis)

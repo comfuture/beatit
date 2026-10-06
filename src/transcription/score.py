@@ -13,6 +13,7 @@ KIT = {
     38: ("Snare", "C", 5, "normal", 1),
     47: ("Tom", "D", 5, "normal", 1),
     42: ("Hi-hat", "G", 5, "x", 1),
+    46: ("Open hi-hat", "G", 5, "x", 1),
     49: ("Cymbal", "A", 5, "x", 1),
 }
 
@@ -47,7 +48,8 @@ def quantize(events: list[dict], duration: float, options: Options) -> dict:
         )
         if tick >= bars * bar_ticks:
             bars = tick // bar_ticks + 1
-        key = (tick, event["pitch"])
+        # Open and closed hi-hat share a notehead position; keep the stronger hit.
+        key = (tick, 42 if event["pitch"] == 46 else event["pitch"])
         candidate = {**event, "tick": tick, "quantized_time": offset + tick / DIVISIONS * 60 / bpm}
         if key not in snapped or candidate["strength"] > snapped[key]["strength"]:
             snapped[key] = candidate
@@ -180,11 +182,19 @@ def _write_voice(measure, hits, voice: int, grid: dict):
                 el(note, "stem", "up" if voice == 1 else "down")
                 if head == "x":
                     el(note, "notehead", "x")
+            notations = None
             if is_triplet and tick % 12 in (0, 8):
+                notations = el(note, "notations")
                 el(
-                    el(note, "notations"),
+                    notations,
                     "tuplet",
                     type="start" if tick % 12 == 0 else "stop",
                     number="1",
+                )
+            if pitch == 46:
+                # The open circle above an x notehead marks an open hi-hat.
+                el(
+                    el(notations if notations is not None else el(note, "notations"), "technical"),
+                    "open",
                 )
         tick += duration

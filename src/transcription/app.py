@@ -34,6 +34,9 @@ EXTENSIONS = {
     ".m4v",
 }
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(1024**3)))
+JOB_AUDIO = {"audio.wav", "drums.wav"} | {
+    f"stem-{name}.flac" for name in ("kick", "snare", "toms", "hh", "cymbals")
+}
 STATIC = Path(__file__).parent / "static"
 
 
@@ -186,7 +189,7 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
     def artifact(identifier: str, filename: str, download: bool = False):
         job = get_job(identifier)
         directory = store.directory(identifier)
-        if filename in {"audio.wav", "drums.wav"}:
+        if filename in JOB_AUDIO:
             path = directory / filename
         else:
             result = job.get("result", {})
@@ -209,6 +212,7 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
             ".svg": "image/svg+xml",
             ".musicxml": "application/vnd.recordare.musicxml+xml",
             ".wav": "audio/wav",
+            ".flac": "audio/flac",
             ".mid": "audio/midi",
             ".json": "application/json",
             ".zip": "application/zip",

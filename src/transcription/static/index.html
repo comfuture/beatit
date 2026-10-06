@@ -38,7 +38,7 @@
           <details class="advanced"><summary>고급 설정 <span>장치 · 감도 · 첫 박</span></summary><div class="settings-grid">
             <label>실행 장치<select name="device" id="device"><option value="auto">자동 선택</option><option value="cpu">CPU</option></select></label>
             <label>타격 검출 감도<select name="sensitivity"><option value="0.75">낮음 · 오검출 줄이기</option><option value="1" selected>표준</option><option value="1.25">높음 · 작은 타격 포함</option></select></label>
-            <label>첫 박 위치 (초)<input name="offset" type="number" min="0" max="120" step="0.001" placeholder="자동 추정"></label>
+            <label>첫 마디 시작 (초)<input name="offset" type="number" min="-10" max="120" step="0.001" placeholder="자동 추정"></label>
             <label>악보 렌더러<select name="renderer"><option value="auto">자동 · MuseScore 우선</option><option value="musescore">MuseScore</option><option value="verovio">Verovio</option></select></label>
           </div></details>
         </form>
@@ -47,21 +47,21 @@
       </section>
       <section class="panel pipeline-panel"><div class="panel-heading"><h2><span class="step-index">02</span> 분석 과정</h2><span id="job-status" class="status-tag">준비</span></div>
         <div class="pipeline-step" data-stage="converting"><span class="stage-number">1</span><div><strong>오디오 추출</strong><p>FFmpeg · 44.1 kHz PCM WAV</p></div><span class="stage-check"></span></div>
-        <div class="pipeline-step" data-stage="separating"><span class="stage-number">2</span><div><strong>드럼 분리</strong><p>Demucs · Hybrid Transformer</p></div><span class="stage-check"></span></div>
-        <div class="pipeline-step" data-stage="transcribing"><span class="stage-number">3</span><div><strong>타격과 비트 분석</strong><p>ADTOF · 5종 드럼 인식</p></div><span class="stage-check"></span></div>
+        <div class="pipeline-step" data-stage="separating"><span class="stage-number">2</span><div><strong>드럼 분리</strong><p>Demucs · DrumSep 5스템</p></div><span class="stage-check"></span></div>
+        <div class="pipeline-step" data-stage="transcribing"><span class="stage-number">3</span><div><strong>타격과 비트 분석</strong><p>ADTOF · Beat This! 다운비트</p></div><span class="stage-check"></span></div>
         <div class="pipeline-step" data-stage="engraving"><span class="stage-number">4</span><div><strong>드럼 악보 생성</strong><p>MusicXML → SVG · 인쇄 및 편집</p></div><span class="stage-check"></span></div>
         <div class="progress-block"><div class="progress-track"><i id="progress-bar"></i></div><div class="progress-caption"><span id="progress-message">파일을 선택하면 분석을 시작할 수 있습니다.</span><b id="progress-percent">0%</b></div><p id="elapsed" class="muted">첫 실행에는 모델 다운로드가 필요합니다.</p></div>
         <div class="job-actions"><button id="cancel" class="text-button" hidden>분석 취소</button><button id="retry" class="text-button" hidden>다시 시도</button><a id="log-link" target="_blank" rel="noopener" hidden>작업 로그 ↗</a><button id="delete-job" class="text-button danger" hidden>작업 삭제</button></div>
-        <div class="engine-note"><span>✳</span><p><strong>결과는 편집 가능한 초안입니다.</strong><br>킥·스네어·하이햇·탐·심벌을 인식합니다. BPM과 첫 마디는 원음과 확인해 주세요.</p></div>
+        <div class="engine-note"><span>✳</span><p><strong>결과는 편집 가능한 초안입니다.</strong><br>킥·스네어·탐·하이햇(열림/닫힘)·심벌을 인식합니다. BPM과 첫 마디는 원음과 확인해 주세요.</p></div>
       </section>
     </div>
     <section id="result" class="result-section" hidden>
       <div class="result-heading no-print"><div><div class="eyebrow">YOUR TRANSCRIPTION</div><h2 id="result-title">드럼 악보</h2><p id="result-meta"></p></div><div class="download-actions"><button id="print" class="secondary-button">인쇄 ↗</button><a id="download-bundle" class="primary-link">전체 다운로드 ↓</a></div></div>
       <div id="counts" class="counts no-print"></div>
-      <div class="audio-review no-print"><label>원음 대조<select id="audio-source"><option value="drums.wav">분리된 드럼</option><option value="audio.wav">전체 오디오</option></select></label><audio id="player" controls preload="metadata"></audio><div class="individual-downloads"><a id="download-xml">MusicXML ↓</a><a id="download-midi">MIDI ↓</a><a id="download-pdf" hidden>PDF ↓</a></div></div>
+      <div class="audio-review no-print"><label>원음 대조<select id="audio-source"><option value="drums.wav">분리된 드럼</option><option value="audio.wav">전체 오디오</option><option value="stem-kick.flac">킥 스템</option><option value="stem-snare.flac">스네어 스템</option><option value="stem-toms.flac">탐 스템</option><option value="stem-hh.flac">하이햇 스템</option><option value="stem-cymbals.flac">심벌 스템</option></select></label><audio id="player" controls preload="metadata"></audio><div class="individual-downloads"><a id="download-xml">MusicXML ↓</a><a id="download-midi">MIDI ↓</a><a id="download-pdf" hidden>PDF ↓</a></div></div>
       <div id="warnings" class="warnings no-print"></div>
       <details class="revision-panel no-print"><summary>악보 조정 및 타격 편집 <span>분석을 반복하지 않고 다시 조판</span></summary>
-        <form id="revision-form" class="revision-controls"><label>BPM<input name="bpm" type="number" min="30" max="300" step="0.001" required></label><label>첫 박 (초)<input name="offset" type="number" min="0" max="120" step="0.0001" required></label><label>박자<select name="meter"><option>4/4</option><option>3/4</option><option>6/8</option><option>7/8</option></select></label><label>격자<select name="grid"><option value="16">16분음표</option><option value="8">8분음표</option><option value="triplet">셋잇단음표</option></select></label><button class="secondary-button" type="submit">악보 다시 생성 ↻</button></form>
+        <form id="revision-form" class="revision-controls"><label>BPM<input name="bpm" type="number" min="30" max="300" step="0.001" required></label><label>첫 마디 (초)<input name="offset" type="number" min="-10" max="120" step="0.0001" required></label><label>박자<select name="meter"><option>4/4</option><option>3/4</option><option>6/8</option><option>7/8</option></select></label><label>격자<select name="grid"><option value="16">16분음표</option><option value="8">8분음표</option><option value="triplet">셋잇단음표</option></select></label><button class="secondary-button" type="submit">악보 다시 생성 ↻</button></form>
         <div class="editor-toolbar"><label>타격 편집 · 마디 <input id="editor-bar" type="number" min="1" value="1"></label><span id="edit-count">타격을 클릭해서 추가하거나 제거하세요.</span><button id="reset-edits" class="text-button">편집 초기화</button></div><div id="event-editor" class="event-editor"></div><p class="footnote">현재 악보 격자에서 편집합니다. 셀은 타격 유무를 나타내며, 검출 점수는 신뢰도 확률이 아닙니다.</p>
       </details>
       <div id="score-pages" class="score-pages"></div>

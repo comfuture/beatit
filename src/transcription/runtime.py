@@ -37,7 +37,14 @@ def capabilities() -> dict:
         "verovio": importlib.util.find_spec("verovio") is not None,
         "mlx_installed": importlib.util.find_spec("mlx") is not None,
         "mlx_supported": False,
-        "classes": {35: "Kick", 38: "Snare", 47: "Tom", 42: "Hi-hat", 49: "Cymbal"},
+        "classes": {
+            35: "Kick",
+            38: "Snare",
+            47: "Tom",
+            42: "Hi-hat",
+            46: "Open hi-hat",
+            49: "Cymbal",
+        },
     }
 
 

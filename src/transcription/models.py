@@ -6,7 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class Options(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     bpm: float | None = Field(default=None, ge=30, le=300)
-    offset: float | None = Field(default=None, ge=0, le=120)
+    # Negative values start bar 1 before the audio, so pickup hits stay on the grid.
+    offset: float | None = Field(default=None, ge=-10, le=120)
     meter: Literal["4/4", "3/4", "6/8", "7/8"] = "4/4"
     grid: Literal["16", "8", "triplet"] = "16"
     device: Literal["auto", "cpu", "mps", "cuda"] = "auto"
@@ -24,8 +25,9 @@ class Options(BaseModel):
 class Event(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     time: float = Field(ge=0, le=7200)
-    pitch: Literal[35, 38, 47, 42, 49]
+    pitch: Literal[35, 38, 47, 42, 46, 49]
     strength: float = Field(default=0.7, ge=0, le=1)
+    velocity: int | None = Field(default=None, ge=1, le=127)
 
 
 class Revision(BaseModel):
