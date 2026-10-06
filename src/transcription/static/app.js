@@ -164,6 +164,14 @@ async function renderResult(job) {
   for (const [name, count] of Object.entries(result.counts)) { const pill = document.createElement('span'); pill.className = 'count-pill'; const number = document.createElement('b'); number.textContent = count; pill.append(document.createTextNode(name), number); $('counts').append(pill); }
   for (const [id, name] of [['download-bundle', 'score-bundle.zip'], ['download-xml', 'score.musicxml'], ['download-midi', 'score.mid'], ['download-pdf', 'score.pdf']]) $(id).href = fileUrl(name, true);
   $('download-pdf').hidden = !result.pdf;
+  const sources = [['drums.wav', '분리된 드럼'], ['audio.wav', '전체 오디오']];
+  for (const [name, label] of [['kick', '킥'], ['snare', '스네어'], ['toms', '탐'], ['hh', '하이햇'], ['cymbals', '심벌']]) {
+    const file = `stem-${name}.flac`;
+    if ((result.stems || []).includes(file)) sources.push([file, `${label} 스템`]);
+  }
+  $('audio-source').replaceChildren(...sources.map(([file, label]) => {
+    const option = document.createElement('option'); option.value = file; option.textContent = label; return option;
+  }));
   $('audio-source').value = 'drums.wav'; $('player').src = fileUrl('drums.wav');
   $('warnings').replaceChildren();
   for (const warning of result.warnings) { const p = document.createElement('p'); p.textContent = `↳ ${warning}`; $('warnings').append(p); }
