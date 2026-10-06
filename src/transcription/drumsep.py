@@ -8,6 +8,7 @@ Weights are downloaded into the user's cache at first use and are not vendored.
 """
 
 import hashlib
+from contextlib import ExitStack
 from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
@@ -204,33 +205,53 @@ def load_model(device: str = "cpu", download: bool = True):
     return model.to(device).eval()
 
 
-def separate(audio: np.ndarray, model, device: str, progress=None) -> dict[str, np.ndarray]:
-    """Separate stereo float audio shaped (2, samples) at 44.1 kHz into kit stems."""
+def separate(
+    audio: np.ndarray, model, device: str, output_directory: Path, progress=None
+) -> dict[str, Path]:
+    """Write float WAV stems with chunk-bounded overlap-add buffers.
+
+    Input is shaped (2, samples) at 44.1 kHz. Completed prefixes cannot receive
+    contributions from later chunks, so they can be normalized and written immediately.
+    """
+    import soundfile as sf
     import torch
     import torch.nn.functional as F
 
     audio = np.atleast_2d(audio)
     if audio.shape[0] == 1:
         audio = np.repeat(audio, 2, axis=0)
-    mix = torch.from_numpy(np.ascontiguousarray(audio, dtype=np.float32))
+    mix = torch.from_numpy(np.asarray(audio, dtype=np.float32))
     chunk = CONFIG.chunk_size
     step = chunk // CONFIG.num_overlap
     fade = chunk // 10
     border = chunk - step
     length = mix.shape[-1]
     padded = length > 2 * border
-    if padded:
-        mix = F.pad(mix[None], (border, border), mode="reflect")[0]
+    trim = border if padded else 0
+    total = length + 2 * trim
     window = torch.ones(chunk)
     window[:fade] = torch.linspace(0, 1, fade)
     window[-fade:] = torch.linspace(1, 0, fade)
-    result = torch.zeros((len(STEMS), *mix.shape))
-    weight = torch.zeros(mix.shape[-1])
-    starts = list(range(0, mix.shape[-1], step))
-    with torch.inference_mode():
+    result = torch.zeros((len(STEMS), 2, chunk))
+    weight = torch.zeros(chunk)
+    starts = range(0, total, step)
+    output_directory.mkdir(parents=True, exist_ok=True)
+    paths = {name: output_directory / f"{name}.wav" for name in STEMS}
+    with ExitStack() as files, torch.inference_mode():
+        writers = [
+            files.enter_context(sf.SoundFile(path, "w", SAMPLE_RATE, 2, subtype="FLOAT"))
+            for path in paths.values()
+        ]
         for index, start in enumerate(starts):
-            part = mix[:, start : start + chunk]
-            size = part.shape[-1]
+            size = min(chunk, total - start)
+            if padded:
+                # Reflect only this chunk instead of copying the entire padded track.
+                positions = torch.arange(start - trim, start - trim + size)
+                positions = torch.where(positions < 0, -positions, positions)
+                positions = torch.where(positions >= length, 2 * length - 2 - positions, positions)
+                part = mix[:, positions]
+            else:
+                part = mix[:, start : start + size]
             mode = "reflect" if size > chunk // 2 else "constant"
             part = F.pad(part[None], (0, chunk - size), mode=mode)
             estimate = model(part.to(device))[0, ..., :size].float().cpu()
@@ -240,12 +261,19 @@ def separate(audio: np.ndarray, model, device: str, progress=None) -> dict[str, 
                 current[:fade] = 1
             if index == len(starts) - 1:
                 current[-min(fade, size) :] = 1
-            result[..., start : start + size] += estimate * current
-            weight[start : start + size] += current
+            result[..., :size] += estimate * current
+            weight[:size] += current
+            # Future chunks start at start + step. Keep their overlap, flush the rest.
+            left, right = max(0, trim - start), min(step, size, trim + length - start)
+            if right > left:
+                completed = (result[..., left:right] / weight[left:right].clamp_min(1e-8)).numpy()
+                np.nan_to_num(completed, copy=False)
+                for writer, wave in zip(writers, completed):
+                    writer.write(wave.T)
+            result[..., :-step] = result[..., step:].clone()
+            result[..., -step:] = 0
+            weight[:-step] = weight[step:].clone()
+            weight[-step:] = 0
             if progress:
                 progress((index + 1) / len(starts))
-    stems = (result / weight.clamp_min(1e-8)).numpy()
-    if padded:
-        stems = stems[..., border:-border]
-    np.nan_to_num(stems, copy=False)
-    return dict(zip(STEMS, stems))
+    return paths

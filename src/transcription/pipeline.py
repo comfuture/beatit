@@ -3,6 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from pathlib import Path
@@ -192,43 +193,61 @@ def transcribe(
 
     def infer(selected):
         progress("separating", 0.36, f"DrumSep으로 악기별 드럼을 분리합니다 · {selected.upper()}")
-        separator = drumsep.load_model(selected)
-        stems = drumsep.separate(
-            audio,
-            separator,
-            selected,
-            lambda done: progress(
-                "separating", 0.36 + 0.16 * done, f"악기별 드럼 분리 · {done * 100:.0f}%"
-            ),
-        )
-        del separator
-        model = detection.load_adtof()
-        names = ["kit", *drumsep.STEMS]
-        activations = {}
-        for index, name in enumerate(names):
-            source = audio if name == "kit" else stems[name]
-            activations[name] = detection.activations(
-                model,
-                detection.spectrogram(source),
+        # Float WAVs retain the original separator precision for ADTOF. Temporary
+        # files are cleaned on both success and failure, including a CPU fallback.
+        with tempfile.TemporaryDirectory(prefix="drumsep-", dir=directory) as scratch:
+            separator = drumsep.load_model(selected)
+            stems = drumsep.separate(
+                audio,
+                separator,
                 selected,
-                lambda done, index=index, name=name: progress(
-                    "transcribing",
-                    0.53 + 0.2 * (index + done) / len(names),
-                    f"드럼 타격 분석 · {labels[name]} · {selected.upper()}",
+                Path(scratch),
+                lambda done: progress(
+                    "separating", 0.36 + 0.16 * done, f"악기별 드럼 분리 · {done * 100:.0f}%"
                 ),
             )
-        return stems, activations
+            del separator
+            model = detection.load_adtof()
+            names = ["kit", *drumsep.STEMS]
+            activations, loudness = {}, {}
+            for index, name in enumerate(names):
+                source = audio if name == "kit" else sf.read(stems[name], dtype="float32")[0].T
+                activations[name] = detection.activations(
+                    model,
+                    detection.spectrogram(source),
+                    selected,
+                    lambda done, index=index, name=name: progress(
+                        "transcribing",
+                        0.53 + 0.2 * (index + done) / len(names),
+                        f"드럼 타격 분석 · {labels[name]} · {selected.upper()}",
+                    ),
+                )
+                if name != "kit":
+                    loudness[name] = detection.loudness_db(source)
+                    with sf.SoundFile(
+                        directory / f"stem-{name}.flac", "w", rate, 2, subtype="PCM_16"
+                    ) as output:
+                        for start in range(0, source.shape[-1], drumsep.CONFIG.chunk_size):
+                            block = source[:, start : start + drumsep.CONFIG.chunk_size]
+                            output.write(np.clip(block, -1, 1).T)
+                    del block  # Its view would otherwise retain this stem during the next read.
+                    stems[name].unlink()
+                del source
+        return activations, loudness
 
     warnings = []
+    fallback = False
     try:
-        stems, activations = infer(device)
+        activations, loudness = infer(device)
     except RuntimeError:
         if device == "cpu" or not allow_fallback:
             raise
         warnings.append(f"DrumSep/ADTOF {device.upper()} 실행 실패로 CPU에서 다시 실행했습니다.")
         device = "cpu"
-        stems, activations = infer(device)
-    loudness = {name: detection.loudness_db(stems[name]) for name in drumsep.STEMS}
+        fallback = True
+    if fallback:
+        # Leave the exception handler first so its traceback releases failed models.
+        activations, loudness = infer(device)
     events, combined = detection.detect_events(
         activations["kit"],
         {name: activations[name] for name in drumsep.STEMS},
@@ -236,8 +255,6 @@ def transcribe(
         sensitivity,
     )
     np.save(directory / "activations.npy", combined)
-    for name, wave in stems.items():
-        sf.write(directory / f"stem-{name}.flac", np.clip(wave, -1, 1).T, rate, subtype="PCM_16")
     return events, device, warnings
 
 
