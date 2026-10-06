@@ -14,6 +14,7 @@ class Options(BaseModel):
     renderer: Literal["auto", "musescore", "verovio"] = "auto"
     source: Literal["mix", "drums"] = "mix"
     sensitivity: float = Field(default=1, ge=0.5, le=1.5)
+    tom_refinement: bool = False
 
     @model_validator(mode="after")
     def validate_grid(self):
@@ -25,9 +26,17 @@ class Options(BaseModel):
 class Event(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     time: float = Field(ge=0, le=7200)
-    pitch: Literal[35, 38, 47, 42, 46, 49]
+    pitch: Literal[35, 38, 45, 47, 50, 42, 46, 49]
     strength: float = Field(default=0.7, ge=0, le=1)
     velocity: int | None = Field(default=None, ge=1, le=127)
+    tom_source_pitch: Literal[47] | None = None
+    tom_match_score: float | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def validate_tom_provenance(self):
+        if self.tom_source_pitch is not None and self.pitch not in (45, 47, 50):
+            raise ValueError("자동 탐 보정 태그는 탐 이벤트에만 사용할 수 있습니다.")
+        return self
 
 
 class Revision(BaseModel):

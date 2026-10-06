@@ -202,6 +202,7 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
                 "events.json",
                 "analysis.json",
                 "engraver.log",
+                "tom-refinement.json",
             } | set(result.get("pages", []))
             if filename not in allowed or not result.get("generation"):
                 raise HTTPException(404, "파일이 없습니다.")

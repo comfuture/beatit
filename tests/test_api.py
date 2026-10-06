@@ -68,11 +68,21 @@ def test_revision_is_queued_and_validates_audio_bounds(tmp_path):
         app.state.store.update(identifier, "completed")
         invalid = {"options": {"bpm": 90}, "events": [{"time": 6, "pitch": 35}]}
         assert client.post(f"/api/jobs/{identifier}/score", json=invalid).status_code == 422
-        valid = {"options": {"bpm": 90}, "events": [{"time": 1, "pitch": 38}]}
+        valid = {
+            "options": {"bpm": 90, "tom_refinement": True},
+            "events": [
+                {"time": 1, "pitch": 38},
+                {"time": 2, "pitch": 45, "tom_source_pitch": 47, "tom_match_score": 0.95},
+                {"time": 3, "pitch": 50},
+            ],
+        }
         assert client.post(f"/api/jobs/{identifier}/score", json=valid).status_code == 202
         request = json.loads((directory / "request.json").read_text())
         assert request["revision"]
         assert request["events"][0]["pitch"] == 38
+        assert request["options"]["tom_refinement"]
+        assert request["events"][1]["tom_source_pitch"] == 47
+        assert request["events"][2]["pitch"] == 50
 
 
 def test_retry_after_engraving_failure_reuses_inference(tmp_path):

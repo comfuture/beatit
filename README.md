@@ -14,7 +14,8 @@ recording and for any use or sharing of the resulting score.
 
 ```text
 Audio/video → FFmpeg → Demucs drum stem → DrumSep kit stems → ADTOF onsets
-            → Beat This! beats/downbeats + rhythm grid → MusicXML → MuseScore SVG/PDF
+            → Beat This! beats/downbeats → optional high/low tom refinement
+            → rhythm grid → MusicXML → MuseScore SVG/PDF
 ```
 
 FastAPI serves the web UI and a single job queue. Demucs uses `htdemucs`. The MDX23C
@@ -69,8 +70,11 @@ extra on Linux.
 
 This is an experimental transcription tool. Verify and edit every score against
 the recording. The first bar follows detected downbeats, but the meter is the selected
-value, and a fixed tempo/grid approximates timing. Individual toms, ride/crash cymbals,
-and ghost notes are not distinguished; open hi-hat detection favours precision.
+value, and a fixed tempo/grid approximates timing. Experimental high/low tom refinement
+can reuse cached kit stems after transcription; ambiguous hits retain the generic Tom
+label. Individual drum sizes, ride/crash cymbals, rimshots, cross-sticks, and ghost notes
+are not distinguished. Open hi-hat detection favours precision.
+See [tom refinement](docs/tom-refinement.md) for its limits.
 
 ```sh
 uv sync --frozen --extra dev
