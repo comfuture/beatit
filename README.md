@@ -12,12 +12,15 @@ recording and for any use or sharing of the resulting score.
 ## Pipeline
 
 ```text
-Audio/video → FFmpeg → Demucs drum stem → ADTOF onsets
-            → Librosa tempo + rhythm grid → MusicXML → MuseScore SVG/PDF
+Audio/video → FFmpeg → Demucs drum stem → DrumSep kit stems → ADTOF onsets
+            → Beat This! beats/downbeats + rhythm grid → MusicXML → MuseScore SVG/PDF
 ```
 
-FastAPI serves the web UI and a single job queue. Demucs uses `htdemucs`; ADTOF uses
-the pinned PyTorch Frame_RNN port and detects kick, snare, tom, hi-hat, and cymbal.
+FastAPI serves the web UI and a single job queue. Demucs uses `htdemucs`. The MDX23C
+DrumSep model splits the drums into kick, snare, toms, hi-hat, and cymbal stems. ADTOF,
+the pinned PyTorch Frame_RNN port, runs on the drum stem and each kit stem; their scores
+are averaged per class. Hi-hat decay marks open hi-hats. Beat This! sets tempo, beat
+phase, and the first downbeat.
 Verovio provides SVG output when MuseScore is unavailable. Processing stays on your
 host; the first run may download model weights.
 
@@ -58,14 +61,15 @@ Apple Silicon uses PyTorch MPS; Intel Macs use CPU. MLX inference is not impleme
 Open **http://127.0.0.1:8000**, upload a file, and click the start button.
 Jobs and media are saved in the ignored `data/` directory. Run
 `uv run drum-score doctor` to check the host, or `uv run drum-score download-model`
-to fetch Demucs weights before processing. Use the selected extra on Linux.
+to fetch the Demucs, DrumSep, and Beat This! weights before processing. Use the selected
+extra on Linux.
 
 ## Limitations and development
 
 This is an experimental transcription tool. Verify and edit every score against
-the recording. Meter and downbeat are not inferred automatically, and a fixed
-tempo/grid approximates timing. Hi-hat articulations, individual toms, and
-ride/crash cymbals are not distinguished.
+the recording. The first bar follows detected downbeats, but the meter is the selected
+value, and a fixed tempo/grid approximates timing. Individual toms, ride/crash cymbals,
+and ghost notes are not distinguished; open hi-hat detection favours precision.
 
 ```sh
 uv sync --frozen --extra dev
@@ -74,5 +78,6 @@ uv run pytest -q
 
 See [detailed usage and Docker setup](docs/usage.md),
 [architecture and upstream license notes](docs/architecture.md), and the
-[first](docs/experiment.md) / [second](docs/experiment-02.md) experiment reports.
+[first](docs/experiment.md) / [second](docs/experiment-02.md) /
+[third](docs/experiment-03.md) experiment reports.
 Review upstream code and model licensing before redistribution or commercial use.
