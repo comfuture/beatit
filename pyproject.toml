@@ -18,15 +18,22 @@ dependencies = [
   "demucs==4.1.0",
   "torch==2.8.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
   "torch==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "torchaudio==2.8.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+  "torchaudio==2.2.2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
   "adtof-pytorch",
+  "beat-this==1.1.0",
+  "huggingface-hub>=0.30,<3",
   "verovio>=5.6,<7",
   "pypdf>=5,<7",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.11,<1"]
-cpu = ["torch==2.8.0; sys_platform == 'linux'"]
-cuda = ["torch==2.8.0; sys_platform == 'linux' and platform_machine == 'x86_64'"]
+cpu = ["torch==2.8.0; sys_platform == 'linux'", "torchaudio==2.8.0; sys_platform == 'linux'"]
+cuda = [
+  "torch==2.8.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "torchaudio==2.8.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 
 [project.scripts]
 drum-score = "transcription.cli:main"
@@ -34,6 +41,10 @@ drum-score = "transcription.cli:main"
 [tool.uv.sources]
 adtof-pytorch = { git = "https://github.com/xavriley/ADTOF-pytorch", rev = "85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9" }
 torch = [
+  { index = "torch-cpu", extra = "cpu", marker = "sys_platform == 'linux'" },
+  { index = "torch-cuda", extra = "cuda", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+]
+torchaudio = [
   { index = "torch-cpu", extra = "cpu", marker = "sys_platform == 'linux'" },
   { index = "torch-cuda", extra = "cuda", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
 ]
