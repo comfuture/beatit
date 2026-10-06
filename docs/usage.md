@@ -55,8 +55,12 @@ docker build -t drum-score:local .
 docker run --rm -p 127.0.0.1:8000:8000 \
   -v "$PWD/data:/app/data" \
   -v "$PWD/work/model-cache:/root/.cache/huggingface" \
+  -v "$PWD/work/torch-cache:/root/.cache/torch" \
   drum-score:local
 ```
+
+Demucs와 DrumSep 가중치는 Hugging Face 캐시에, Beat This! 가중치는 PyTorch hub 캐시에
+저장됩니다. 두 볼륨을 유지하면 컨테이너를 다시 실행해도 모델을 새로 받지 않습니다.
 
 기본 컨테이너는 CPU용이며 Verovio로 SVG를 생성합니다. Apple Silicon에서 실행하는 Docker도
 Linux CPU를 사용합니다. MPS를 쓰려면 macOS에서 직접 실행하세요.
