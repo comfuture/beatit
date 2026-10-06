@@ -140,13 +140,16 @@ class JobStore:
             if job["status"] not in {"failed", "cancelled"}:
                 raise ValueError("실패하거나 취소된 작업만 다시 시도할 수 있습니다.")
             directory = self.directory(identifier)
+            stage = job["progress"].get("stage")
             if (
-                job["progress"].get("stage") == "engraving"
+                stage in {"refining", "engraving"}
                 and (directory / "analysis.json").is_file()
                 and (directory / "events.json").is_file()
             ):
                 request = self._read(directory / "request.json", {})
-                if not request.get("revision"):
+                # Refining starts only after both onsets and tempo have been cached.
+                # Preserve the older engraving retry's tempo-upgrade behavior.
+                if not request.get("revision") and stage == "engraving":
                     request["reestimate_tempo"] = True
                     analysis = self._read(directory / "analysis.json", {})
                     analysis["inference_elapsed_seconds"] = job["progress"].get("elapsed_seconds")
