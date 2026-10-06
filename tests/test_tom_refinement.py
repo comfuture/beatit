@@ -2,7 +2,9 @@ import copy
 import json
 
 import numpy as np
+import pytest
 import soundfile as sf
+from fastapi.testclient import TestClient
 
 from transcription.models import Options
 from transcription.tom_refinement import refine_toms, restore_inferred_toms
@@ -141,3 +143,59 @@ def test_cached_revision_can_enable_and_disable_refinement_without_inference(tmp
     generation = tmp_path / result["generation"]
     assert json.loads((generation / "events.json").read_text()) == events
     assert not (generation / "tom-refinement.json").exists()
+
+
+@pytest.mark.parametrize("status", ["failed", "cancelled"])
+def test_retry_initial_refinement_resumes_from_onset_and_tempo_cache(tmp_path, monkeypatch, status):
+    from transcription import pipeline, tom_refinement
+    from transcription.app import create_app
+
+    app = create_app(tmp_path, start_worker=False)
+    with TestClient(app) as client:
+        options = Options(tom_refinement=True, renderer="verovio", device="cpu").model_dump()
+        identifier = client.post(
+            "/api/jobs",
+            files={"file": ("Synthetic.wav", b"audio")},
+            data={"options": json.dumps(options)},
+        ).json()["id"]
+        directory = tmp_path / identifier
+        events, _, _ = recording(directory, [120] * 5 + [240] * 5)
+        tempo = {
+            "estimated_bpm": 120,
+            "estimated_offset": 0,
+            "tempo_reliable": True,
+            "warnings": [],
+        }
+        monkeypatch.setattr(pipeline, "convert_media", lambda *args: 11)
+        monkeypatch.setattr(
+            pipeline, "separate", lambda *args: (directory / "drums.wav", "cpu", [])
+        )
+        monkeypatch.setattr(pipeline, "transcribe", lambda *args: (events, "cpu", []))
+        monkeypatch.setattr(pipeline, "estimate_tempo", lambda *args: (tempo, []))
+
+        def interrupted(*args):
+            raise RuntimeError("Interrupted during refinement")
+
+        monkeypatch.setattr(tom_refinement, "refine_toms", interrupted)
+        with pytest.raises(RuntimeError, match="Interrupted"):
+            pipeline.run(directory)
+        assert json.loads((directory / "progress.json").read_text())["stage"] == "refining"
+        cached_analysis = (directory / "analysis.json").read_bytes()
+        cached_events = (directory / "events.json").read_bytes()
+        app.state.store.update(identifier, status)
+        assert client.post(f"/api/jobs/{identifier}/retry").status_code == 202
+        request = json.loads((directory / "request.json").read_text())
+        assert request["revision"] and not request.get("reestimate_tempo")
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("A refining retry must reuse all completed inference")
+
+        for name in ("convert_media", "separate", "transcribe", "estimate_tempo"):
+            monkeypatch.setattr(pipeline, name, forbidden)
+        monkeypatch.setattr(tom_refinement, "refine_toms", refine_toms)
+        pipeline.run(directory)
+        result = json.loads((directory / "result.json").read_text())
+        assert result["tom_refinement"]["status"] == "completed"
+        assert result["tom_refinement"]["low_count"] == result["tom_refinement"]["high_count"] == 5
+        assert (directory / "analysis.json").read_bytes() == cached_analysis
+        assert (directory / "events.json").read_bytes() == cached_events
