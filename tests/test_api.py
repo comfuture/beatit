@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 from transcription.app import create_app
@@ -96,3 +97,20 @@ def test_retry_after_engraving_failure_reuses_inference(tmp_path):
         app.state.store.update(identifier, "failed")
         assert client.post(f"/api/jobs/{identifier}/retry").status_code == 202
         assert json.loads((directory / "request.json").read_text())["revision"]
+
+
+@pytest.mark.parametrize("missing", ["analysis.json", "events.json"])
+def test_refining_retry_without_complete_cache_keeps_initial_request(tmp_path, missing):
+    app = create_app(tmp_path, start_worker=False)
+    with TestClient(app) as client:
+        identifier = client.post("/api/jobs", files={"file": ("song.wav", b"x")}).json()["id"]
+        directory = tmp_path / identifier
+        original = (directory / "request.json").read_bytes()
+        (directory / "analysis.json").write_text("{}")
+        (directory / "events.json").write_text("[]")
+        (directory / missing).unlink()
+        (directory / "progress.json").write_text('{"stage":"refining"}')
+        app.state.store.update(identifier, "failed")
+        response = client.post(f"/api/jobs/{identifier}/retry")
+        assert response.status_code == 202 and response.json()["status"] == "queued"
+        assert (directory / "request.json").read_bytes() == original
