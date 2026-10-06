@@ -6,8 +6,10 @@ resolution-markers = [
     "(python_full_version < '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')",
     "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda'",
     "python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda'",
-    "python_full_version >= '3.12' and sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
-    "python_full_version < '3.12' and sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "(python_full_version >= '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+    "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
     "python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
     "python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
     "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
@@ -31,8 +33,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pretty-midi" },
     { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
     { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
 ]
@@ -75,6 +76,31 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a1/4a/874ecf9b472f998130c2b5e145dcdb9f6131e84786111489103b66772143/audioread-3.1.0.tar.gz", hash = "sha256:1c4ab2f2972764c896a8ac61ac53e261c8d29f0c6ccd652f84e18f08a4cab190", size = 20082, upload-time = "2025-10-26T19:44:13.484Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7e/16/fbe8e1e185a45042f7cd3a282def5bb8d95bb69ab9e9ef6a5368aa17e426/audioread-3.1.0-py3-none-any.whl", hash = "sha256:b30d1df6c5d3de5dcef0fb0e256f6ea17bdcf5f979408df0297d8a408e2971b4", size = 23143, upload-time = "2025-10-26T19:44:12.016Z" },
+]
+
+[[package]]
+name = "beat-this"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "einops" },
+    { name = "numpy" },
+    { name = "rotary-embedding-torch", version = "0.8.9", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "rotary-embedding-torch", version = "0.9.1", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine != 'x86_64' or sys_platform != 'darwin' or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "soxr" },
+    { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'aarch64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (platform_python_implementation != 'CPython' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu') or (sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/c4/7ce01e047c1e8d99490e95172d710e08901c24fb24e19a5dd4f885177c99/beat_this-1.1.0.tar.gz", hash = "sha256:3017c741f972972a650edcaccfe5760687fe4f5587feaa98896d90f866c2435c", size = 40635, upload-time = "2026-04-14T10:16:39.5Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ce/0e/e23cbbe6e3efcd54e84dec22b6d88954655036a993cc3843ab741bc24de4/beat_this-1.1.0-py3-none-any.whl", hash = "sha256:3f2b2d1e027c6dac380bf80c71555e3c28a4036a7f1af20129a945915a72a645", size = 40060, upload-time = "2026-04-14T10:16:37.955Z" },
 ]
 
 [[package]]
@@ -229,8 +255,7 @@ dependencies = [
     { name = "safetensors" },
     { name = "sphn" },
     { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
     { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
     { name = "tqdm" },
@@ -246,8 +271,10 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "adtof-pytorch" },
+    { name = "beat-this" },
     { name = "demucs" },
     { name = "fastapi" },
+    { name = "huggingface-hub" },
     { name = "librosa" },
     { name = "numpy" },
     { name = "pretty-midi" },
@@ -255,21 +282,27 @@ dependencies = [
     { name = "python-multipart" },
     { name = "soundfile" },
     { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
     { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'aarch64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (platform_python_implementation != 'CPython' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu') or (sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
     { name = "uvicorn" },
     { name = "verovio" },
 ]
 
 [package.optional-dependencies]
 cpu = [
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda'" },
-    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
+    { name = "torchaudio", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'aarch64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (platform_python_implementation != 'CPython' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torchaudio", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
 ]
 cuda = [
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "torchaudio", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 dev = [
     { name = "httpx" },
@@ -280,9 +313,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "adtof-pytorch", git = "https://github.com/xavriley/ADTOF-pytorch?rev=85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9" },
+    { name = "beat-this", specifier = "==1.1.0" },
     { name = "demucs", specifier = "==4.1.0" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1" },
+    { name = "huggingface-hub", specifier = ">=0.30,<3" },
     { name = "librosa", specifier = "==0.11.0" },
     { name = "numpy", specifier = ">=1.26,<2" },
     { name = "pretty-midi", specifier = ">=0.2.10,<1" },
@@ -295,6 +330,10 @@ requires-dist = [
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==2.2.2" },
     { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'cuda'", specifier = "==2.8.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "drum-score", extra = "cuda" } },
     { name = "torch", marker = "sys_platform == 'linux' and extra == 'cpu'", specifier = "==2.8.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "drum-score", extra = "cpu" } },
+    { name = "torchaudio", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'", specifier = "==2.8.0" },
+    { name = "torchaudio", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==2.2.2" },
+    { name = "torchaudio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'cuda'", specifier = "==2.8.0", index = "https://download.pytorch.org/whl/cu128", conflict = { package = "drum-score", extra = "cuda" } },
+    { name = "torchaudio", marker = "sys_platform == 'linux' and extra == 'cpu'", specifier = "==2.8.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "drum-score", extra = "cpu" } },
     { name = "uvicorn", specifier = ">=0.34,<1" },
     { name = "verovio", specifier = ">=5.6,<7" },
 ]
@@ -513,8 +552,7 @@ version = "0.2.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
     { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
     { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
 ]
@@ -716,7 +754,8 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "(python_full_version < '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')",
     "python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda'",
-    "python_full_version < '3.12' and sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+    "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
     "python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
     "python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
     "(python_full_version < '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
@@ -734,7 +773,8 @@ source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "(python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')",
     "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda'",
-    "python_full_version >= '3.12' and sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "(python_full_version >= '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
     "python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
     "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
     "(python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
@@ -835,7 +875,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.10.2.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cublas-cu12", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fa/41/e79269ce215c857c935fd86bcfe91a451a584dfc27f1e068f568b9ad1ab7/nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:c9132cc3f8958447b4910a1720036d9eff5928cc3179b0a51fb6d167c6cc87d8", size = 705026878, upload-time = "2025-06-06T21:52:51.348Z" },
@@ -848,7 +888,7 @@ name = "nvidia-cufft-cu12"
 version = "11.3.3.83"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/bc/7771846d3a0272026c416fbb7e5f4c1f146d6d80704534d0b187dd6f4800/nvidia_cufft_cu12-11.3.3.83-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:848ef7224d6305cdb2a4df928759dca7b1201874787083b6e7550dd6765ce69a", size = 193109211, upload-time = "2025-03-07T01:44:56.873Z" },
@@ -880,9 +920,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.7.3.90"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "nvidia-cusparse-cu12", marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cublas-cu12", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cusparse-cu12", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/32/f7cd6ce8a7690544d084ea21c26e910a97e077c9b7f07bf5de623ee19981/nvidia_cusolver_cu12-11.7.3.90-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:db9ed69dbef9715071232caa9b69c52ac7de3a95773c2db65bdba85916e4e5c0", size = 267229841, upload-time = "2025-03-07T01:46:54.356Z" },
@@ -895,7 +935,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.8.93"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/f7/cd777c4109681367721b00a106f491e0d0d15cfa1fd59672ce580ce42a97/nvidia_cusparse_cu12-12.5.8.93-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:9b6c161cb130be1a07a27ea6923df8141f3c295852f4b260c65f18f3e0a091dc", size = 288117129, upload-time = "2025-03-07T01:47:40.407Z" },
@@ -1177,6 +1217,50 @@ wheels = [
 ]
 
 [[package]]
+name = "rotary-embedding-torch"
+version = "0.8.9"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
+    "python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
+]
+dependencies = [
+    { name = "einops", marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/38/74783585b1f0282fddd3faf1abd6dd20977255c27e31737eced2d7ec05f1/rotary_embedding_torch-0.8.9.tar.gz", hash = "sha256:b213f153cad1d108064d930544fb3af678d56515893d3f869a7a146f87997e3f", size = 7497, upload-time = "2025-07-27T01:26:14.675Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/21/05e319ebef4a8194f9c4cc09f9c3213ab846da200fa6e88699cdb7e9679a/rotary_embedding_torch-0.8.9-py3-none-any.whl", hash = "sha256:700e8de9dfbefba5f9117a66652a2520648dcc60136895f0068b6a85347cab02", size = 5872, upload-time = "2025-07-27T01:26:13.496Z" },
+]
+
+[[package]]
+name = "rotary-embedding-torch"
+version = "0.9.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')",
+    "(python_full_version < '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')",
+    "(python_full_version >= '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+    "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+    "(python_full_version < '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+]
+dependencies = [
+    { name = "einops", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin' or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fc/63/776d55b395aed9d2815afc1740056e919691d1be1ceee203d101d33d1674/rotary_embedding_torch-0.9.1.tar.gz", hash = "sha256:f43c39cd9c0aaa17d47e876db89a552a203dd8af35e7980f484ab7ad7ea8bf69", size = 13246, upload-time = "2026-06-20T23:39:14.667Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ea/63/ca681366df98d207876c6ad7761ef6910668c83ec766fd5a70c56b9c3567/rotary_embedding_torch-0.9.1-py3-none-any.whl", hash = "sha256:489ef53e21ab4c4eb35c0c97b551d724f5eea71c2bca39acb8fee8d88b142a76", size = 17423, upload-time = "2026-06-20T23:39:13.427Z" },
+]
+
+[[package]]
 name = "ruff"
 version = "0.16.10"
 source = { registry = "https://pypi.org/simple" }
@@ -1424,43 +1508,37 @@ wheels = [
 [[package]]
 name = "torch"
 version = "2.8.0"
-source = { registry = "https://download.pytorch.org/whl/cpu" }
-resolution-markers = [
-    "python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin'",
-    "python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin'",
-]
-dependencies = [
-    { name = "filelock", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "fsspec", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "jinja2", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (python_full_version >= '3.12' and platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "networkx", version = "3.7", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (python_full_version < '3.12' and platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "setuptools", marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (python_full_version < '3.12' and platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "sympy", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "typing-extensions", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-]
-wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.8.0-cp311-none-macosx_11_0_arm64.whl", hash = "sha256:3d05017d19bc99741288e458888283a44b0ee881d53f05f72f8b1cfea8998122", upload-time = "2025-10-01T23:35:48Z" },
-    { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.8.0-cp312-none-macosx_11_0_arm64.whl", hash = "sha256:a47b7986bee3f61ad217d8a8ce24605809ab425baf349f97de758815edd2ef54", upload-time = "2025-10-01T23:35:50Z" },
-]
-
-[[package]]
-name = "torch"
-version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "(python_full_version >= '3.12' and platform_machine != 'x86_64') or (python_full_version >= '3.12' and sys_platform != 'darwin')",
-    "(python_full_version < '3.12' and platform_machine != 'x86_64') or (python_full_version < '3.12' and sys_platform != 'darwin')",
+    "python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+    "(python_full_version < '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
 ]
 dependencies = [
-    { name = "filelock", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "fsspec", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "jinja2", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "networkx", version = "3.7", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "setuptools", marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "sympy", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
-    { name = "typing-extensions", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "filelock", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
+    { name = "fsspec", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
+    { name = "jinja2", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
+    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (python_full_version < '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "networkx", version = "3.7", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (python_full_version < '3.12' and platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cublas-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cuda-cupti-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cuda-nvrtc-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cuda-runtime-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cudnn-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cufft-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cufile-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-curand-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cusolver-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cusparse-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-cusparselt-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-nccl-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-nvjitlink-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "nvidia-nvtx-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "setuptools", marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (python_full_version < '3.12' and platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "sympy", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
+    { name = "triton", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "typing-extensions", marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8f/c4/3e7a3887eba14e815e614db70b3b529112d1513d9dae6f4d43e373360b7f/torch-2.8.0-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:220a06fd7af8b653c35d359dfe1aaf32f65aa85befa342629f716acb134b9710", size = 102073391, upload-time = "2025-08-06T14:53:20.937Z" },
@@ -1478,8 +1556,10 @@ name = "torch"
 version = "2.8.0+cpu"
 source = { registry = "https://download.pytorch.org/whl/cpu" }
 resolution-markers = [
-    "python_full_version >= '3.12' and sys_platform != 'darwin'",
-    "python_full_version < '3.12' and sys_platform != 'darwin'",
+    "(python_full_version >= '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version >= '3.12' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
 ]
 dependencies = [
     { name = "filelock", marker = "(sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
@@ -1545,6 +1625,108 @@ wheels = [
 ]
 
 [[package]]
+name = "torchaudio"
+version = "2.2.2"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
+    "python_full_version < '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
+]
+dependencies = [
+    { name = "torch", version = "2.2.2", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/57/c4/80cc3315dd1ca706643b78f894901d4d888ffe376a5e401f73d9db61071e/torchaudio-2.2.2-cp311-cp311-macosx_10_13_x86_64.whl", hash = "sha256:f1a81a518a3e86c004125eb891fc433ce8fb2343295b5d612d0f37b24e131efd", size = 3405553, upload-time = "2024-03-27T21:12:19.497Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/6f/79fe2cb91908b3d3a57b8ef68911123f797c0fb05a268a6da86cc5a67484/torchaudio-2.2.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:01482fc85117f85ee44f8aa8e9c11b1c022326173e0748789ed42b219102937f", size = 1813127, upload-time = "2024-03-27T21:12:37.998Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/5c/ea155afaabd0b9bd46bc3aef786f387b6285c02468dcef693f68571f5af5/torchaudio-2.2.2-cp311-cp311-manylinux1_x86_64.whl", hash = "sha256:02e3dc45408d83371d9832ee4520f13f887f5da4cd0931ebde6aaf2a1723d340", size = 3349995, upload-time = "2024-03-27T21:12:26.762Z" },
+    { url = "https://files.pythonhosted.org/packages/9e/bf/9ac0880baa859b1377107fc9fed4ebe69613735aec15c543dd79242098f6/torchaudio-2.2.2-cp311-cp311-manylinux2014_aarch64.whl", hash = "sha256:0a03a48b6d55d17d48f419a7f1d0d4018d48a04c76585c16a9b5e69281f92f94", size = 1651342, upload-time = "2024-03-27T21:12:33.688Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/b8/c2eb1dea20b703ac43e41f95c29998b040bfe7e5ad50acd21ee4fb13078e/torchaudio-2.2.2-cp311-cp311-win_amd64.whl", hash = "sha256:45ff277ced4a3f8cdc0474df16ebfb177633337040e5ac82d1fd46e4e6b57f85", size = 2370442, upload-time = "2024-03-27T21:12:23.825Z" },
+    { url = "https://files.pythonhosted.org/packages/05/39/fcc68b1f848a38b57446b624be42db66fec3587972941a5b86fc19b8bd45/torchaudio-2.2.2-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:da3cc523696166ea525d2b3377d789da5388f36d94a20a324b09df00f1c43458", size = 3400705, upload-time = "2024-03-27T21:12:10.303Z" },
+    { url = "https://files.pythonhosted.org/packages/13/72/454c6fe5898316e0a3377e9eadd4041ab88ecb7ff06f7008a8e997f9d6ae/torchaudio-2.2.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:8fc7aac4f4b24e9b3fa03a2a7933363f7e5c484835ccb2a20cf164a0e5e715b7", size = 1803837, upload-time = "2024-03-27T21:12:35.861Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/d5/58b5f13dd495e3b8f8d1cd92a110a37e8f00a0c6793081f40e874421608f/torchaudio-2.2.2-cp312-cp312-manylinux1_x86_64.whl", hash = "sha256:2b20b3b2f0d71b626cfa651cb290010f0cae6c2f6d5cb33f39ce34f99877fd9d", size = 3344093, upload-time = "2024-03-27T21:12:08.592Z" },
+    { url = "https://files.pythonhosted.org/packages/03/20/7562d430b504e2d40cd872d4bf9670d01200428af6c3bf92d4fa0066e01e/torchaudio-2.2.2-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:9db0338bd3a78e60c745b6b5c366e4c9b88eb210e1fdd617d3f62f1a0b859ea4", size = 1646823, upload-time = "2024-03-27T21:12:16.074Z" },
+    { url = "https://files.pythonhosted.org/packages/13/47/2a86273d9b04f0e328ddc79269e1a91d2716ce9f6acc0ef4250d0421e858/torchaudio-2.2.2-cp312-cp312-win_amd64.whl", hash = "sha256:468e46c1dcf4a8c5d5ef68dae934a67a83f544034d1be7322cc58f721ff0e487", size = 2351238, upload-time = "2024-03-27T21:12:21.714Z" },
+]
+
+[[package]]
+name = "torchaudio"
+version = "2.8.0"
+source = { registry = "https://download.pytorch.org/whl/cpu" }
+resolution-markers = [
+    "python_full_version >= '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+    "python_full_version < '3.12' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
+]
+dependencies = [
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'aarch64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (platform_python_implementation != 'CPython' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+]
+wheels = [
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:c9276857d241c6de257af765c0f51fc011af38cb725401495121b280913007cf", upload-time = "2025-08-05T20:12:02Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:4573c6042950c20278e3608a9a38050ba0bc72e0049e1bbfd249caf859a8029b", upload-time = "2025-08-05T20:12:02Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:ddef94bf181e6447cbb05f38beaca8f6c5bb8d2b9ddced1aa3452025b9fc70d3", upload-time = "2025-08-05T20:12:02Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:862e2e40bf09d865e5df080a84c1a39bbcef40e43140f4b1737eb3a389d3b38f", upload-time = "2025-08-05T20:12:02Z" },
+]
+
+[[package]]
+name = "torchaudio"
+version = "2.8.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "python_full_version < '3.12' and platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda'",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version >= '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+    "(python_full_version < '3.12' and platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (python_full_version < '3.12' and sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')",
+]
+dependencies = [
+    { name = "torch", version = "2.8.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu') or (platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda') or (platform_machine == 'x86_64' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu' and extra != 'extra-10-drum-score-cuda')" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/bf/6b01ef3defb8d0a772c863588711e9b2b011c27d6b37c1b9d15a359c8442/torchaudio-2.8.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:c9276857d241c6de257af765c0f51fc011af38cb725401495121b280913007cf", size = 1859094, upload-time = "2025-08-06T14:58:35.078Z" },
+    { url = "https://files.pythonhosted.org/packages/75/ca/da5d0a3bb7d114a8b590ecce14859ea0a05102bb4de68cdd1ed7a90634d6/torchaudio-2.8.0-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:4573c6042950c20278e3608a9a38050ba0bc72e0049e1bbfd249caf859a8029b", size = 1692033, upload-time = "2025-08-06T14:58:37.393Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/ef/62ac736d8f906cc414181050e08a495a637dab985186c34bd76ea37efbc0/torchaudio-2.8.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:776c0b4ba84b9e3ddf6304b9c47cd63549d7896a6f3d5184ece074cc3d76ed6b", size = 4011716, upload-time = "2025-08-06T14:58:40.138Z" },
+    { url = "https://files.pythonhosted.org/packages/14/86/015337c8434abc604b8680371df783f66c421a7f211cbe40a374b0540b6d/torchaudio-2.8.0-cp311-cp311-win_amd64.whl", hash = "sha256:078105bf80f725c0215a0bebac8cb2fb1b3993ab32bdc3fcd50145a5b4127001", size = 2505194, upload-time = "2025-08-06T14:58:57.301Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/cc/c2e2a3eb6ee956f73c68541e439916f8146170ea9cc61e72adea5c995312/torchaudio-2.8.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:ddef94bf181e6447cbb05f38beaca8f6c5bb8d2b9ddced1aa3452025b9fc70d3", size = 1856736, upload-time = "2025-08-06T14:58:36.3Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/0d/24dad878784f1edd62862f27173781669f0c71eb46368636787d1e364188/torchaudio-2.8.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:862e2e40bf09d865e5df080a84c1a39bbcef40e43140f4b1737eb3a389d3b38f", size = 1692930, upload-time = "2025-08-06T14:58:41.312Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/a6/84d80f34472503e9eb82245d7df501c59602d75d7360e717fb9b84f91c5e/torchaudio-2.8.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:93a8583f280fe83ba021aa713319381ea71362cc87b67ee38e97a43cb2254aee", size = 4014607, upload-time = "2025-08-06T14:58:47.234Z" },
+    { url = "https://files.pythonhosted.org/packages/43/ab/96ad33afa320738a7cfb4b51ba97e2f3cfb1e04ae3115d5057655103ba4f/torchaudio-2.8.0-cp312-cp312-win_amd64.whl", hash = "sha256:4b82cacd1b8ccd543b1149d8cab257a40dfda8119023d2e3a96c66349c84bffb", size = 2499890, upload-time = "2025-08-06T14:58:55.066Z" },
+]
+
+[[package]]
+name = "torchaudio"
+version = "2.8.0+cpu"
+source = { registry = "https://download.pytorch.org/whl/cpu" }
+resolution-markers = [
+    "(python_full_version >= '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version >= '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version >= '3.12' and sys_platform != 'darwin' and sys_platform != 'linux')",
+    "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.12' and platform_python_implementation != 'CPython' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'linux')",
+]
+dependencies = [
+    { name = "torch", version = "2.8.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra == 'extra-10-drum-score-cpu') or (sys_platform == 'darwin' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda') or (sys_platform == 'linux' and extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+]
+wheels = [
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:e54bd7fc9472019308097d99102df9acee22aa2451ae808d27840bc874320292", upload-time = "2025-08-05T20:12:02Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0%2Bcpu-cp311-cp311-win_amd64.whl", hash = "sha256:db37df7eee906f8fe0a639fdc673f3541cb2e173169b16d4133447eb922d1938", upload-time = "2025-08-05T20:12:02Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:9377faee65a290578280ac7f4884c3586253dac2ca28c60f458ff6efe86a6b05", upload-time = "2025-08-05T20:12:02Z" },
+    { url = "https://download-r2.pytorch.org/whl/cpu/torchaudio-2.8.0%2Bcpu-cp312-cp312-win_amd64.whl", hash = "sha256:9b302192b570657c1cc787a4d487ae4bbb7f2aab1c01b1fcc46757e7f86f391e", upload-time = "2025-08-05T20:12:02Z" },
+]
+
+[[package]]
+name = "torchaudio"
+version = "2.8.0+cu128"
+source = { registry = "https://download.pytorch.org/whl/cu128" }
+resolution-markers = [
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64') or (python_full_version >= '3.12' and sys_platform != 'darwin')",
+    "(python_full_version < '3.12' and platform_machine != 'x86_64') or (python_full_version < '3.12' and sys_platform != 'darwin')",
+]
+dependencies = [
+    { name = "torch", version = "2.8.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+]
+wheels = [
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.8.0%2Bcu128-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:f4409df567d0723a7a3a89d32c7552a17e0ff6f137ea26a0d268c665259b2995", upload-time = "2025-08-05T20:12:07Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.8.0%2Bcu128-cp311-cp311-win_amd64.whl", hash = "sha256:7a1eb6154e05b8056b34c7a41495e09d57f79eb0180eb4e7f3bb2a61845ca8ea", upload-time = "2025-08-05T20:12:07Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.8.0%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:145b8a0c21cfcaa1705c67173c5d439087e0e120d5da9bc344746f937901d243", upload-time = "2025-08-05T20:12:07Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu128/torchaudio-2.8.0%2Bcu128-cp312-cp312-win_amd64.whl", hash = "sha256:cce3a60cd9a97f7360c8f95504ac349311fb7d6b9b826135936764f4de5f782d", upload-time = "2025-08-05T20:12:07Z" },
+]
+
+[[package]]
 name = "tqdm"
 version = "4.70.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1561,7 +1743,7 @@ name = "triton"
 version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "setuptools", marker = "(platform_machine != 'x86_64' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
+    { name = "setuptools", marker = "(platform_machine != 'x86_64' and extra != 'extra-10-drum-score-cpu') or (sys_platform != 'darwin' and extra == 'extra-10-drum-score-cuda') or (sys_platform != 'darwin' and extra != 'extra-10-drum-score-cpu') or (extra == 'extra-10-drum-score-cpu' and extra == 'extra-10-drum-score-cuda')" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7d/39/43325b3b651d50187e591eefa22e236b2981afcebaefd4f2fc0ea99df191/triton-3.4.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7b70f5e6a41e52e48cfc087436c8a28c17ff98db369447bcaff3b887a3ab4467", size = 155531138, upload-time = "2025-07-30T19:58:29.908Z" },
