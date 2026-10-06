@@ -12,6 +12,8 @@ KIT = {
     35: ("Kick", "F", 4, "normal", 2),
     38: ("Snare", "C", 5, "normal", 1),
     47: ("Tom", "D", 5, "normal", 1),
+    45: ("Low tom", "B", 4, "normal", 1),
+    50: ("High tom", "E", 5, "normal", 1),
     42: ("Hi-hat", "G", 5, "x", 1),
     46: ("Open hi-hat", "G", 5, "x", 1),
     49: ("Cymbal", "A", 5, "x", 1),

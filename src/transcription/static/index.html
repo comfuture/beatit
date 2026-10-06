@@ -31,6 +31,7 @@
         <div id="file-card" class="file-card" hidden><span class="file-icon">♫</span><div><strong id="filename"></strong><small id="filesize"></small></div><button id="remove-file" class="icon-button" aria-label="선택한 파일 제거">×</button></div>
         <div class="settings-title">채보 설정 <span>필요한 값만 조정하세요</span></div>
         <form id="options-form" class="settings-grid">
+          <label>탐 높이 보정<select name="tom_refinement"><option value="false">사용 안 함</option><option value="true">고음·저음 구분 (실험)</option></select></label>
           <label>BPM<input name="bpm" type="number" min="30" max="300" step="0.1" placeholder="자동 추정"></label>
           <label>박자<select name="meter"><option>4/4</option><option>3/4</option><option>6/8</option><option>7/8</option></select></label>
           <label>리듬 격자<select name="grid"><option value="16">16분음표</option><option value="8">8분음표</option><option value="triplet">8분 셋잇단음표</option></select></label>
@@ -58,11 +59,11 @@
     <section id="result" class="result-section" hidden>
       <div class="result-heading no-print"><div><div class="eyebrow">YOUR TRANSCRIPTION</div><h2 id="result-title">드럼 악보</h2><p id="result-meta"></p></div><div class="download-actions"><button id="print" class="secondary-button">인쇄 ↗</button><a id="download-bundle" class="primary-link">전체 다운로드 ↓</a></div></div>
       <div id="counts" class="counts no-print"></div>
-      <div class="audio-review no-print"><label>원음 대조<select id="audio-source"><option value="drums.wav">분리된 드럼</option><option value="audio.wav">전체 오디오</option></select></label><audio id="player" controls preload="metadata"></audio><div class="individual-downloads"><a id="download-xml">MusicXML ↓</a><a id="download-midi">MIDI ↓</a><a id="download-pdf" hidden>PDF ↓</a></div></div>
+      <div class="audio-review no-print"><label>원음 대조<select id="audio-source"><option value="drums.wav">분리된 드럼</option><option value="audio.wav">전체 오디오</option></select></label><audio id="player" controls preload="metadata"></audio><div class="individual-downloads"><a id="download-xml">MusicXML ↓</a><a id="download-midi">MIDI ↓</a><a id="download-pdf" hidden>PDF ↓</a><a id="download-tom-report" hidden>탐 보정 내역 ↓</a></div></div>
       <div id="warnings" class="warnings no-print"></div>
       <details class="revision-panel no-print"><summary>악보 조정 및 타격 편집 <span>분석을 반복하지 않고 다시 조판</span></summary>
-        <form id="revision-form" class="revision-controls"><label>BPM<input name="bpm" type="number" min="30" max="300" step="0.001" required></label><label>첫 마디 (초)<input name="offset" type="number" min="-10" max="120" step="0.0001" required></label><label>박자<select name="meter"><option>4/4</option><option>3/4</option><option>6/8</option><option>7/8</option></select></label><label>격자<select name="grid"><option value="16">16분음표</option><option value="8">8분음표</option><option value="triplet">셋잇단음표</option></select></label><button class="secondary-button" type="submit">악보 다시 생성 ↻</button></form>
-        <div class="editor-toolbar"><label>타격 편집 · 마디 <input id="editor-bar" type="number" min="1" value="1"></label><span id="edit-count">타격을 클릭해서 추가하거나 제거하세요.</span><button id="reset-edits" class="text-button">편집 초기화</button></div><div id="event-editor" class="event-editor"></div><p class="footnote">현재 악보 격자에서 편집합니다. 셀은 타격 유무를 나타내며, 검출 점수는 신뢰도 확률이 아닙니다.</p>
+        <form id="revision-form" class="revision-controls"><label>BPM<input name="bpm" type="number" min="30" max="300" step="0.001" required></label><label>첫 마디 (초)<input name="offset" type="number" min="-10" max="120" step="0.0001" required></label><label>박자<select name="meter"><option>4/4</option><option>3/4</option><option>6/8</option><option>7/8</option></select></label><label>격자<select name="grid"><option value="16">16분음표</option><option value="8">8분음표</option><option value="triplet">셋잇단음표</option></select></label><label>탐 높이 보정<select name="tom_refinement"><option value="false">사용 안 함</option><option value="true">고음·저음 구분 (실험)</option></select></label><button class="secondary-button" type="submit">악보 다시 생성 ↻</button></form>
+        <div class="editor-toolbar"><label>타격 편집 · 마디 <input id="editor-bar" type="number" min="1" value="1"></label><span id="edit-count">타격을 클릭해서 추가하거나 제거하세요.</span><button id="reset-edits" class="text-button">편집 초기화</button></div><div id="event-editor" class="event-editor"></div><p class="footnote">현재 악보 격자에서 편집합니다. 탐 높이 보정 후 남은 Tom은 미분류 타격입니다. 셀은 타격 유무를 나타내며, 검출 점수는 신뢰도 확률이 아닙니다.</p>
       </details>
       <div id="score-pages" class="score-pages"></div>
     </section>
