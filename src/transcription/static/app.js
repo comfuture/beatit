@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const stages = ['converting', 'separating', 'transcribing', 'engraving'];
 const labels = { queued: '대기', running: '분석 중', completed: '완료', failed: '실패', cancelled: '취소' };
-const kit = [[42, 'Hi-hat'], [49, 'Cymbal'], [47, 'Tom'], [38, 'Snare'], [35, 'Kick']];
+const kit = [[49, 'Cymbal'], [46, 'Open HH'], [42, 'Hi-hat'], [47, 'Tom'], [38, 'Snare'], [35, 'Kick']];
 let selectedFile = null, currentId = null, currentJob = null, system = null;
 let timer = null, resultKey = null, draftEvents = [], editCount = 0, uploading = false;
 

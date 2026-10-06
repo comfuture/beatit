@@ -14,3 +14,14 @@ def test_midi_preserves_drum_mapping_meter_and_quantized_onset(tmp_path):
     assert abs(note.start - 0.125) < 0.002
     assert midi.time_signature_changes[0].numerator == 7
     assert midi.time_signature_changes[0].denominator == 8
+
+
+def test_midi_uses_estimated_velocity_when_present(tmp_path):
+    events = [
+        {"time": 0.5, "pitch": 46, "strength": 0.2, "velocity": 100},
+        {"time": 1.0, "pitch": 35, "strength": 0.5},
+    ]
+    path = tmp_path / "drums.mid"
+    write_midi(events, path, 120)
+    notes = pretty_midi.PrettyMIDI(str(path)).instruments[0].notes
+    assert [(n.pitch, n.velocity) for n in notes] == [(46, 100), (35, 72)]
