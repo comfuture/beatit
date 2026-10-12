@@ -1,7 +1,22 @@
 import type { DrumEvent, Grid } from "../types/studio";
-export function playbackBar(position: number, grid: Grid) {
+function playbackTick(position: number, grid: Grid) {
   const tick = (((position - grid.offset) * grid.bpm) / 60) * 12;
+  // Seeking to an exact beat can land just below it through float round-off.
+  const nearest = Math.round(tick);
+  return Math.abs(tick - nearest) < 1e-8 ? nearest : tick;
+}
+export function playbackBar(position: number, grid: Grid) {
+  const tick = playbackTick(position, grid);
   return Math.max(1, Math.min(grid.bars, Math.floor(tick / grid.bar_ticks) + 1));
+}
+// Beat numbers in the editor follow the quarter-note BPM (12 ticks per beat).
+// Keep the last partial beat in odd meters, and hide playback outside this bar.
+export function playbackBeat(position: number, grid: Grid, bar: number) {
+  const tick = playbackTick(position, grid);
+  const relativeTick = tick - (bar - 1) * grid.bar_ticks;
+  return relativeTick >= 0 && relativeTick < grid.bar_ticks
+    ? Math.floor(relativeTick / 12)
+    : null;
 }
 export function eventTick(event: DrumEvent, grid: Grid) {
   return Math.max(

@@ -16,6 +16,7 @@ const playbackError = ref("");
 let restoreTime = 0;
 let resume = false;
 let request: AbortController | undefined;
+let playbackFrame: number | undefined;
 const sources = computed(() => [
   { label: "원본 오디오", value: "audio.wav" },
   { label: "분리된 드럼", value: "drums.wav" },
@@ -73,6 +74,7 @@ watch(source, () => {
   restoreTime = position.value;
   resume = playing.value;
   playing.value = false;
+  stopPlaybackClock();
   playbackError.value = "";
   loadWaveform();
 });
@@ -117,6 +119,29 @@ function updateTime() {
   position.value = player.value?.currentTime || 0;
   emit("time", position.value);
 }
+function stopPlaybackClock() {
+  if (playbackFrame !== undefined) cancelAnimationFrame(playbackFrame);
+  playbackFrame = undefined;
+}
+function startPlaybackClock() {
+  stopPlaybackClock();
+  function sample() {
+    updateTime();
+    const audio = player.value;
+    playbackFrame =
+      audio && !audio.paused && !audio.ended
+        ? requestAnimationFrame(sample)
+        : undefined;
+  }
+  // Read the media clock, including seeks/rate changes, instead of accumulating
+  // elapsed wall time. Native timeupdate still covers background tabs.
+  sample();
+}
+function pausePlayback() {
+  playing.value = false;
+  stopPlaybackClock();
+  updateTime();
+}
 function shortcut(event: KeyboardEvent) {
   if (
     (event.target as HTMLElement)?.closest(
@@ -134,6 +159,7 @@ onMounted(() => {
   window.addEventListener("keydown", shortcut);
 });
 onBeforeUnmount(() => {
+  stopPlaybackClock();
   request?.abort();
   window.removeEventListener("keydown", shortcut);
   player.value?.pause();
@@ -270,9 +296,16 @@ defineExpose({ seek });
       @loadedmetadata="ready"
       @timeupdate="updateTime"
       @play="playing = true"
-      @pause="playing = false"
-      @ended="playing = false"
-      @error="playbackError = '오디오 파일을 불러오지 못했습니다.'"
+      @playing="startPlaybackClock"
+      @waiting="stopPlaybackClock"
+      @emptied="stopPlaybackClock"
+      @seeked="updateTime"
+      @pause="pausePlayback"
+      @ended="pausePlayback"
+      @error="
+        pausePlayback();
+        playbackError = '오디오 파일을 불러오지 못했습니다.';
+      "
     />
   </section>
 </template>

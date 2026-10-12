@@ -371,6 +371,54 @@ test("beat editor follows playback, seeking and tab changes by default", async (
   expect(state.errors).toEqual([]);
 });
 
+test("beat highlighting holds all four subdivisions and preserves hit visibility", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  const audio = page.locator("audio");
+  await expect.poll(() => audio.evaluate((e: HTMLAudioElement) => e.readyState)).toBeGreaterThanOrEqual(1);
+  for (const time of [0, 0.125, 0.25, 0.375]) {
+    await audio.evaluate((e: HTMLAudioElement, time) => { e.currentTime = time; }, time);
+    await expect(page.locator(".beat-number.current")).toHaveText(["1", "·", "·", "·"]);
+    await expect(page.locator(".beat-cell.current")).toHaveCount(32);
+    await expect(page.locator(".velocity-cell.current")).toHaveCount(4);
+  }
+  const kick = page.getByRole("button", { name: "1마디 1번째 격자 Kick", exact: true });
+  await expect(kick).toHaveAttribute("aria-pressed", "true");
+  await expect(kick.locator(".hit")).toBeVisible();
+  await expect.poll(async () => {
+    const activeHit = await kick.evaluate(e => getComputedStyle(e).backgroundColor);
+    const activeEmpty = await page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true })
+      .evaluate(e => getComputedStyle(e).backgroundColor);
+    const inactive = await page.getByRole("button", { name: "1마디 5번째 격자 Kick", exact: true })
+      .evaluate(e => getComputedStyle(e).backgroundColor);
+    return activeHit === activeEmpty && activeHit !== inactive;
+  }).toBe(true);
+  await audio.evaluate((e: HTMLAudioElement) => { e.currentTime = 0.5; });
+  await expect(page.locator(".beat-number.current")).toHaveText(["2", "·", "·", "·"]);
+  await audio.evaluate((e: HTMLAudioElement) => { e.currentTime = 2; });
+  await expect(page.getByRole("spinbutton", { name: "편집 마디" })).toHaveValue("2");
+  await expect(page.locator(".beat-number.current")).toHaveText(["1", "·", "·", "·"]);
+  expect(state.errors).toEqual([]);
+});
+
+test("playback follows the media clock even without native timeupdate events", async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener("timeupdate", e => e.stopImmediatePropagation(), true);
+  });
+  const state = await setup(page);
+  await openSession(page);
+  await page.getByRole("button", { name: "재생", exact: true }).click();
+  await expect(page.locator(".beat-number.current")).toHaveText(["2", "·", "·", "·"]);
+  await expect(page.getByRole("spinbutton", { name: "편집 마디" })).toHaveValue("2");
+  await expect(page.locator(".beat-number.current")).toHaveText(["1", "·", "·", "·"]);
+  await page.getByRole("button", { name: "일시 정지", exact: true }).click();
+  const paused = await page.locator("audio").evaluate((e: HTMLAudioElement) => e.currentTime);
+  await expect(page.getByRole("slider", { name: "오디오 재생 위치" })).toHaveAttribute("aria-valuenow", String(paused));
+  await page.getByRole("button", { name: "정지", exact: true }).click();
+  await expect(page.locator(".beat-number.current")).toHaveText(["1", "·", "·", "·"]);
+  expect(state.errors).toEqual([]);
+});
+
 test("score follows playing bars, scrolls and switches pages at the audio position", async ({ page }) => {
   const state = await setup(page, { multiPage: true });
   await openSession(page);

@@ -6,6 +6,7 @@ import {
   tickTime,
   validateOptions,
   playbackBar,
+  playbackBeat,
 } from "../app/utils/rhythm";
 import type { Grid } from "../app/types/studio";
 const grid: Grid = {
@@ -18,6 +19,35 @@ const grid: Grid = {
   mean_quantization_error_ms: 0,
 };
 describe("editor timeline boundaries", () => {
+  it("lands on the first beat after exact-bar seeks with fractional tempo", () => {
+    const saved = { ...grid, bpm: 131.014, offset: 0.393, bars: 150 };
+    for (let bar = 1; bar <= saved.bars; bar++) {
+      for (let beat = 0; beat < 4; beat++) {
+        const time = tickTime((bar - 1) * saved.bar_ticks + beat * 12, saved);
+        expect(playbackBar(time, saved)).toBe(bar);
+        expect(playbackBeat(time, saved, bar)).toBe(beat);
+      }
+    }
+  });
+  it.each([3, 6, 4])("holds a whole beat regardless of grid step %s", (step) => {
+    const saved = { ...grid, offset: 0, step };
+    for (const time of [0, 0.125, 0.25, 0.375, 0.499])
+      expect(playbackBeat(time, saved, 1)).toBe(0);
+    expect(playbackBeat(0.5, saved, 1)).toBe(1);
+    expect(playbackBeat(1.999, saved, 1)).toBe(3);
+    expect(playbackBeat(2, saved, 1)).toBeNull();
+    expect(playbackBeat(2, saved, 2)).toBe(0);
+  });
+  it("does not highlight another bar or the lead-in, and keeps partial beats", () => {
+    expect(playbackBeat(0, { ...grid, offset: 0.5 }, 1)).toBeNull();
+    expect(playbackBeat(0, grid, 1)).toBe(1);
+    expect(playbackBeat(0, grid, 2)).toBeNull();
+    const odd = { ...grid, offset: 0, meter: "7/8", bar_ticks: 42 };
+    expect(playbackBeat(1.5, odd, 1)).toBe(3);
+    expect(playbackBeat(1.749, odd, 1)).toBe(3);
+    expect(playbackBeat(1.75, odd, 1)).toBeNull();
+    expect(playbackBeat(1.75, odd, 2)).toBe(0);
+  });
   it("shares playback bars across views including offsets and odd meters", () => {
     expect(playbackBar(0, { ...grid, offset: 1 })).toBe(1);
     expect(playbackBar(1.49, grid)).toBe(1);

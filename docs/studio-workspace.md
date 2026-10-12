@@ -17,9 +17,15 @@ Processing still requires the local backend; this is not a PWA.
   progress, actual queue status, cancellation and retry.
 - Audio: actual peak envelope, click/keyboard seeking, original/drum/kit stem
   comparison at the same position, playback speed and volume.
+  During playback, animation frames sample the audio element's media clock for
+  view synchronization; native time updates remain as a background-tab fallback.
+  The frame loop stops on pause, buffering, source changes and unmount.
 - Editor: the published score grid, eight drum lanes, add/remove hits, new-hit
   velocity, per-bar navigation, playback follow, undo/redo and explicit save.
   Pickup cells before time zero and cells after audio end cannot create invalid hits.
+  Playback highlights the entire numbered beat across the ruler, kit and velocity
+  lanes (four sixteenth-note cells in 4/4), holding the band until the next beat.
+  Hit colors remain visible inside the band; the edit grid stays unchanged.
 - Score: page navigation, zoom, printing, SVG-backed preview, MusicXML/MIDI/PDF/ZIP
   exports. The saved score remains visible until regeneration publishes a new result.
   The current audio bar is highlighted using the saved grid's tempo, offset and
@@ -62,6 +68,8 @@ editing, undo/redo, regeneration payloads, draft navigation, score/export, audio
 transport/source switching, resizing and compact layouts with isolated API fixtures.
 Score-follow coverage includes real audio playback, seeking across pages, zoom,
 manual follow suspension/resumption, tab remounting and unavailable layout data.
+Beat-follow checks cover whole-beat highlighting, playback without native
+`timeupdate` events, and exact beat/bar seeks at fractional tempos.
 The Python API suite checks real waveform transients, channel handling, cache
 invalidation and source restrictions, plus SVG measure bounds, final barline
 deduplication, Verovio viewport transforms and generation consistency.

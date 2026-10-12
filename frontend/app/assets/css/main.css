@@ -1017,6 +1017,9 @@ a:focus-visible,
 }
 .beat-number.current {
   color: var(--ui-primary);
+  font-weight: 700;
+  background: color-mix(in srgb, var(--ui-primary) 20%, var(--ui-bg));
+  border-bottom-color: var(--ui-primary);
 }
 .instrument-label {
   display: flex;
@@ -1061,9 +1064,6 @@ a:focus-visible,
 .beat-cell.downbeat {
   border-left: 1px solid #494e59;
 }
-.beat-cell.current {
-  background: #2a3531;
-}
 .beat-cell:hover:not(:disabled) {
   background: #34373e;
 }
@@ -1072,6 +1072,16 @@ a:focus-visible,
 }
 .beat-cell.on {
   background: color-mix(in srgb, var(--track-color) 9%, #1c1e23);
+}
+.beat-cell.current,
+.velocity-cell.current {
+  background: color-mix(in srgb, var(--ui-primary) 16%, var(--ui-bg));
+}
+.beat-cell.current.downbeat {
+  border-left-color: var(--ui-primary);
+}
+.beat-cell.current:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ui-primary) 26%, var(--ui-bg));
 }
 .hit {
   display: block;

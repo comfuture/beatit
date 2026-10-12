@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { kit, type DrumEvent, type Grid } from "~/types/studio";
-import { eventTick, tickTime, canAddTick, playbackBar } from "~/utils/rhythm";
+import {
+  eventTick,
+  tickTime,
+  canAddTick,
+  playbackBar,
+  playbackBeat,
+} from "~/utils/rhythm";
 const props = defineProps<{
   events: DrumEvent[];
   grid: Grid;
@@ -31,17 +37,13 @@ const hits = computed(() => {
   }
   return map;
 });
-const playbackTick = computed(
-  () => (((props.position - props.grid.offset) * props.grid.bpm) / 60) * 12,
-);
-const playbackCell = computed(() =>
-  Math.floor((playbackTick.value - barOffset.value) / props.grid.step),
+const activeBeat = computed(() =>
+  playbackBeat(props.position, props.grid, bar.value),
 );
 watch(
   [() => props.position, follow, () => props.grid],
   () => {
-    if (follow.value)
-      bar.value = playbackBar(props.position, props.grid);
+    if (follow.value) bar.value = playbackBar(props.position, props.grid);
   },
   { immediate: true },
 );
@@ -156,7 +158,7 @@ function keyboard(event: KeyboardEvent) {
           class="beat-number mono"
           :class="{
             downbeat: ((cell - 1) * grid.step) % 12 === 0,
-            current: cell - 1 === playbackCell,
+            current: Math.floor(((cell - 1) * grid.step) / 12) === activeBeat,
           }"
           >{{
             ((cell - 1) * grid.step) % 12 === 0
@@ -180,7 +182,7 @@ function keyboard(event: KeyboardEvent) {
                 `${instrument.pitch}:${barOffset + (cell - 1) * grid.step}`,
               ),
               downbeat: ((cell - 1) * grid.step) % 12 === 0,
-              current: cell - 1 === playbackCell,
+              current: Math.floor(((cell - 1) * grid.step) / 12) === activeBeat,
             }"
             :style="{ '--track-color': instrument.color }"
             :aria-label="`${bar}마디 ${cell}번째 격자 ${instrument.name}`"
@@ -213,6 +215,9 @@ function keyboard(event: KeyboardEvent) {
           v-for="cell in cells"
           :key="`velocity-${cell}`"
           class="velocity-cell"
+          :class="{
+            current: Math.floor(((cell - 1) * grid.step) / 12) === activeBeat,
+          }"
         >
           <i
             :style="{
