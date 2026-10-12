@@ -500,6 +500,7 @@ onBeforeUnmount(() => {
                         :position="position"
                         :url="studio.fileUrl"
                         :stale="dirty || busy"
+                        @seek="timeline?.seek($event)"
                       /></section
                   ></template>
                 </USplitter>

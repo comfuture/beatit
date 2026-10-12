@@ -1193,6 +1193,20 @@ a:focus-visible,
   border: 2px solid #159576b3;
   border-radius: 3px;
 }
+.score-measure-target {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+.score-measure-target:hover,
+.score-measure-target:focus-visible {
+  background: #18b58b14;
+  outline: 2px solid #159576;
+  outline-offset: -2px;
+}
 .print-score {
   display: none;
 }

@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import type { Job, ScoreMeasure } from "~/types/studio";
-import { playbackBar } from "~/utils/rhythm";
+import { playbackBar, tickTime } from "~/utils/rhythm";
 const props = defineProps<{
   job: Job;
   url: (name: string, download?: boolean) => string;
   stale?: boolean;
   position: number;
 }>();
+const emit = defineEmits<{ seek: [time: number] }>();
 const page = ref(1);
 const zoom = ref(80);
 const failed = ref(false);
+const pageLoaded = ref(false);
 const follow = ref(true);
 const measures = ref<ScoreMeasure[]>([]);
 const loadingLayout = ref(false);
@@ -23,6 +25,9 @@ const activeMeasure = computed(() => measures.value[currentBar.value - 1]);
 const visibleMeasure = computed(() =>
   activeMeasure.value?.page === page.value ? activeMeasure.value : undefined,
 );
+const pageMeasures = computed(() =>
+  measures.value.filter((measure) => measure.page === page.value),
+);
 watch(
   [() => props.job.id, () => props.job.result?.generation],
   async ([id, generation], _, onCleanup) => {
@@ -31,6 +36,7 @@ watch(
     measures.value = [];
     page.value = 1;
     failed.value = false;
+    pageLoaded.value = false;
     if (!generation) return;
     loadingLayout.value = true;
     try {
@@ -53,7 +59,17 @@ watch(
 );
 watch(page, () => {
   failed.value = false;
+  pageLoaded.value = false;
 });
+function seekMeasure(measure: ScoreMeasure) {
+  const grid = props.job.result?.grid;
+  if (!grid || !pageLoaded.value || failed.value) return;
+  emit("seek", Math.max(0, tickTime((measure.bar - 1) * grid.bar_ticks, grid)));
+}
+function onPageLoad() {
+  pageLoaded.value = true;
+  void revealMeasure();
+}
 function browsePage(target: number) {
   follow.value = false;
   page.value = target;
@@ -181,11 +197,28 @@ async function printScore() {
           :src="url(job.result.pages[page - 1]!)"
           :alt="`${job.filename} 드럼 악보 ${page}페이지`"
           class="score-paper"
-          @load="revealMeasure"
+          @load="onPageLoad"
           @error="failed = true"
         />
+        <template v-if="pageLoaded && !failed">
+          <button
+            v-for="measure in pageMeasures"
+            :key="measure.bar"
+            type="button"
+            class="score-measure-target"
+            :aria-label="`${measure.bar}마디 시작으로 이동`"
+            :title="`${measure.bar}마디 시작으로 이동`"
+            :style="{
+              left: `${measure.x * 100}%`,
+              top: `${measure.y * 100}%`,
+              width: `${measure.width * 100}%`,
+              height: `${measure.height * 100}%`,
+            }"
+            @click="seekMeasure(measure)"
+          />
+        </template>
         <div
-          v-if="visibleMeasure && !failed"
+          v-if="visibleMeasure && pageLoaded && !failed"
           ref="highlight"
           class="score-measure-highlight"
           role="img"

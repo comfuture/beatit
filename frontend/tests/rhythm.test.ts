@@ -26,6 +26,9 @@ describe("editor timeline boundaries", () => {
         const time = tickTime((bar - 1) * saved.bar_ticks + beat * 12, saved);
         expect(playbackBar(time, saved)).toBe(bar);
         expect(playbackBeat(time, saved, bar)).toBe(beat);
+        const mediaTime = Math.floor(time * 1e6) / 1e6;
+        expect(playbackBar(mediaTime, saved)).toBe(bar);
+        expect(playbackBeat(mediaTime, saved, bar)).toBe(beat);
       }
     }
   });

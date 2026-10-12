@@ -48,8 +48,10 @@ function sampleJob() {
     },
   };
 }
-async function setup(page: Page, { multiPage = false, layoutUnavailable = false } = {}) {
+async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0 } = {}) {
   let job = sampleJob();
+  job.result.grid.offset = offset;
+  job.result.options.offset = offset;
   if (multiPage) job.result.pages.push("score-2.svg");
   let history = true;
   let saved: any = null;
@@ -475,5 +477,49 @@ test("score remains readable when measure positions are unavailable", async ({ p
   await expect(page.getByRole("switch", { name: "악보 재생 따라가기" })).toBeDisabled();
   await expect(page.locator(".score-paper")).toBeVisible();
   await expect(page.locator(".score-measure-highlight")).toHaveCount(0);
+  await expect(page.locator(".score-measure-target")).toHaveCount(0);
   expect(state.errors).toEqual([]);
 });
+
+for (const offset of [0.25, -0.5]) {
+  test(`score measure clicks seek across zoomed pages and preserve playback (offset ${offset})`, async ({ page }) => {
+    const state = await setup(page, { multiPage: true, offset });
+    await openSession(page);
+    await page.getByRole("tab", { name: "악보 보기" }).click();
+    const audio = page.locator("audio");
+    const seek = page.getByRole("slider", { name: "오디오 재생 위치" });
+    const marker = page.locator(".score-measure-highlight");
+    const follow = page.getByRole("switch", { name: "악보 재생 따라가기" });
+    await expect.poll(() => audio.evaluate((e: HTMLAudioElement) => e.readyState)).toBeGreaterThanOrEqual(1);
+
+    await page.getByRole("button", { name: "2마디 시작으로 이동", exact: true }).click();
+    await expect(seek).toHaveAttribute("aria-valuenow", String(2 + offset));
+    await expect(marker).toHaveAttribute("data-bar", "2");
+    expect(await audio.evaluate((e: HTMLAudioElement) => e.paused)).toBe(true);
+
+    await page.getByRole("button", { name: "다음 페이지", exact: true }).click();
+    await page.getByRole("combobox", { name: "악보 확대" }).click();
+    await page.getByRole("option", { name: "150%", exact: true }).click();
+    await page.getByRole("button", { name: "3마디 시작으로 이동", exact: true }).click();
+    await expect(seek).toHaveAttribute("aria-valuenow", String(4 + offset));
+    await expect(marker).toHaveAttribute("data-bar", "3");
+    await expect(follow).not.toBeChecked();
+    expect(await audio.evaluate((e: HTMLAudioElement) => e.paused)).toBe(true);
+
+    await page.getByRole("button", { name: "이전 페이지", exact: true }).click();
+    const first = page.getByRole("button", { name: "1마디 시작으로 이동", exact: true });
+    await first.focus();
+    await first.press("Space");
+    await expect(seek).toHaveAttribute("aria-valuenow", String(Math.max(0, offset)));
+    expect(await audio.evaluate((e: HTMLAudioElement) => e.paused)).toBe(true);
+    await page.getByRole("button", { name: "재생", exact: true }).click();
+    await page.getByRole("button", { name: "2마디 시작으로 이동", exact: true }).click();
+    await expect(marker).toHaveAttribute("data-bar", "2");
+    await expect.poll(() => audio.evaluate((e: HTMLAudioElement) => e.currentTime)).toBeGreaterThan(2 + offset);
+    expect(await audio.evaluate((e: HTMLAudioElement) => e.paused)).toBe(false);
+    await page.getByRole("button", { name: "일시 정지", exact: true }).click();
+    await page.getByRole("tab", { name: "비트 편집" }).click();
+    await expect(page.getByRole("spinbutton", { name: "편집 마디" })).toHaveValue("2");
+    expect(state.errors).toEqual([]);
+  });
+}

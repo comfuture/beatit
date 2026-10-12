@@ -32,6 +32,9 @@ Processing still requires the local backend; this is not a PWA.
   meter. Playback follow scrolls the score panel and changes pages automatically;
   manual page navigation pauses follow, and the switch resumes it at the current
   audio position. Highlight overlays do not appear in print or exported files.
+  Clicking a measure (or focusing it and pressing Enter/Space) seeks the audio to
+  its saved-grid start, clamped to zero for pickup bars, while preserving the
+  playback and follow states. Measure targets scale with the page zoom.
 - Inspector: actual BPM, meter, bars and duration; draft hit counts; score settings;
   model warnings; worker log and confirmed deletion. Unsaved changes require an
   explicit discard before switching sessions and trigger a browser leave warning.
@@ -70,6 +73,8 @@ Score-follow coverage includes real audio playback, seeking across pages, zoom,
 manual follow suspension/resumption, tab remounting and unavailable layout data.
 Beat-follow checks cover whole-beat highlighting, playback without native
 `timeupdate` events, and exact beat/bar seeks at fractional tempos.
+Score-click checks cover positive/negative offsets, zoomed pages, keyboard
+activation, paused/playing transport and synchronization back to the beat editor.
 The Python API suite checks real waveform transients, channel handling, cache
 invalidation and source restrictions, plus SVG measure bounds, final barline
 deduplication, Verovio viewport transforms and generation consistency.

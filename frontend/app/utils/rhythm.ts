@@ -1,9 +1,11 @@
 import type { DrumEvent, Grid } from "../types/studio";
 function playbackTick(position: number, grid: Grid) {
   const tick = (((position - grid.offset) * grid.bpm) / 60) * 12;
-  // Seeking to an exact beat can land just below it through float round-off.
+  // Seeking to an exact beat can land just below it: media clocks round to
+  // microseconds, in addition to arithmetic round-off at fractional tempos.
   const nearest = Math.round(tick);
-  return Math.abs(tick - nearest) < 1e-8 ? nearest : tick;
+  const tolerance = (grid.bpm / 60) * 12 * 1e-6 + 1e-8;
+  return Math.abs(tick - nearest) < tolerance ? nearest : tick;
 }
 export function playbackBar(position: number, grid: Grid) {
   const tick = playbackTick(position, grid);
