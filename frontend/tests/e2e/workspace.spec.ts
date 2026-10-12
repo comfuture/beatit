@@ -113,7 +113,25 @@ async function setup(page: Page) {
       wav.writeUInt16LE(16, 34);
       wav.write("data", 36);
       wav.writeUInt32LE(wav.length - 44, 40);
-      return route.fulfill({ contentType: "audio/wav", body: wav });
+      const range = route.request().headers().range?.match(/^bytes=(\d+)-(\d*)$/);
+      if (range) {
+        const start = Number(range[1]);
+        const end = Math.min(Number(range[2] || wav.length - 1), wav.length - 1);
+        return route.fulfill({
+          status: 206,
+          contentType: "audio/wav",
+          headers: {
+            "accept-ranges": "bytes",
+            "content-range": `bytes ${start}-${end}/${wav.length}`,
+          },
+          body: wav.subarray(start, end + 1),
+        });
+      }
+      return route.fulfill({
+        contentType: "audio/wav",
+        headers: { "accept-ranges": "bytes" },
+        body: wav,
+      });
     }
     if (path.endsWith("/score")) {
       saved = route.request().postDataJSON();
@@ -307,4 +325,35 @@ test('session deletion requires confirmation and updates history', async ({ page
   await page.getByRole('dialog').getByRole('button', { name: '세션 삭제', exact: true }).click();
   await expect(page.getByRole('heading', { name: '새로운 드럼 세션' })).toBeVisible();
   await expect(page.getByText('아직 저장된 세션이 없습니다.')).toBeVisible();
+});
+
+test("beat editor follows playback, seeking and tab changes by default", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  const bar = page.getByRole("spinbutton", { name: "편집 마디" });
+  const follow = page.getByRole("switch", { name: "재생 따라가기" });
+  const seek = page.getByRole("slider", { name: "오디오 재생 위치" });
+  await expect(follow).toBeChecked();
+  await seek.press("ArrowRight");
+  await page.getByRole("button", { name: "재생", exact: true }).click();
+  await expect(bar).toHaveValue("2");
+  await page.getByRole("button", { name: "일시 정지", exact: true }).click();
+
+  await follow.click();
+  await seek.press("Home");
+  await expect(bar).toHaveValue("2");
+  await follow.click();
+  await expect(bar).toHaveValue("1");
+
+  await page.getByRole("tab", { name: "악보 보기" }).click();
+  await seek.press("ArrowRight");
+  await seek.press("ArrowRight");
+  await seek.press("ArrowRight");
+  await seek.press("ArrowRight");
+  await expect(seek).toHaveAttribute("aria-valuenow", "4");
+  await page.getByRole("tab", { name: "비트 편집" }).click();
+  await expect(bar).toHaveValue("3");
+  await page.getByRole("button", { name: "정지", exact: true }).click();
+  await expect(bar).toHaveValue("1");
+  expect(state.errors).toEqual([]);
 });

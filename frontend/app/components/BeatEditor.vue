@@ -14,7 +14,7 @@ const emit = defineEmits<{
 }>();
 const bar = ref(1);
 const velocity = ref(100);
-const follow = ref(false);
+const follow = ref(true);
 const cells = computed(() =>
   Math.round(props.grid.bar_ticks / props.grid.step),
 );
@@ -38,7 +38,7 @@ const playbackCell = computed(() =>
   Math.floor((playbackTick.value - barOffset.value) / props.grid.step),
 );
 watch(
-  () => props.position,
+  [() => props.position, follow, () => props.grid],
   () => {
     if (follow.value)
       bar.value = Math.max(
@@ -49,6 +49,7 @@ watch(
         ),
       );
   },
+  { immediate: true },
 );
 watch(
   () => props.grid,
