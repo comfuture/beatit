@@ -1,0 +1,30 @@
+{
+  "name": "beatit-studio",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --host 127.0.0.1",
+    "build": "nuxt generate && node scripts/install-web.mjs",
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.107",
+    "@nuxt/ui": "4.11.3",
+    "nuxt": "4.6.1",
+    "tailwindcss": "^4.1.0",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^26.6.5",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "vue-tsc": "^3.1.0"
+  },
+  "overrides": {
+    "@simple-git/argv-parser": "2.0.1"
+  }
+}

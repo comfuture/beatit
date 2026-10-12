@@ -18,7 +18,11 @@ Audio/video → FFmpeg → Demucs drum stem → DrumSep kit stems → ADTOF onse
             → rhythm grid → MusicXML → MuseScore SVG/PDF
 ```
 
-FastAPI serves the web UI and a single job queue. Demucs uses `htdemucs`. The MDX23C
+Nuxt 4 and Nuxt UI provide a dark audio workspace with a session sidebar, resizable
+waveform/editor/inspector panels, source/stem playback, and score preview. The beat
+editor supports per-bar hit editing, velocity for new hits, undo/redo, and explicit
+score regeneration. FastAPI serves the generated UI and a single job queue.
+Demucs uses `htdemucs`. The MDX23C
 DrumSep model splits the drums into kick, snare, toms, hi-hat, and cymbal stems. ADTOF,
 the pinned PyTorch Frame_RNN port, runs on the drum stem and each kit stem; their scores
 are averaged per class. Hi-hat decay marks open hi-hats. Beat This! sets tempo, beat
@@ -28,12 +32,15 @@ host; the first run may download model weights.
 
 ## Install and run
 
-Requires Git, FFmpeg, and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Requires Git, Node.js 22.12+ (24 LTS recommended), FFmpeg, and
+[uv](https://docs.astral.sh/uv/getting-started/installation/).
 The project selects Python 3.12. MuseScore is optional for PDF export.
 
 ```sh
 git clone https://github.com/comfuture/beatit.git
 cd beatit
+npm --prefix frontend ci
+npm --prefix frontend run build
 ```
 
 ### macOS
@@ -60,7 +67,10 @@ to build the audio dependency. On Linux x86_64 with a compatible NVIDIA driver,
 replace `--extra cpu` with `--extra cuda` in both commands (CUDA 12.8 wheels).
 Apple Silicon uses PyTorch MPS; Intel Macs use CPU. MLX inference is not implemented.
 
-Open **http://127.0.0.1:8000**, upload a file, and click the start button.
+Open **http://127.0.0.1:8000**, import a source into a new session, and start analysis.
+The build installs the static Nuxt app in `src/transcription/static/web`; rebuild
+after frontend changes. Node is only needed for building, not serving. Docker builds
+the frontend automatically. Build the frontend before packaging a Python wheel.
 Jobs and media are saved in the ignored `data/` directory. Run
 `uv run drum-score doctor` to check the host, or `uv run drum-score download-model`
 to fetch the Demucs, DrumSep, and Beat This! weights before processing. Use the selected
@@ -79,7 +89,17 @@ See [tom refinement](docs/tom-refinement.md) for its limits.
 ```sh
 uv sync --frozen --extra dev
 uv run pytest -q
+npm --prefix frontend run typecheck
+npm --prefix frontend test
+npm --prefix frontend exec playwright install chromium
+npm --prefix frontend run test:e2e
 ```
+
+For frontend development, keep FastAPI on port 8000 and run
+`npm --prefix frontend run dev`. Nuxt proxies `/api` to FastAPI without changing the
+browser origin. Set `BEATIT_API_URL` for a different backend port. The browser tests
+use isolated API fixtures; they do not modify existing sessions or download models.
+See [workspace design and verification](docs/studio-workspace.md).
 
 See [detailed usage and Docker setup](docs/usage.md),
 [architecture and upstream license notes](docs/architecture.md), and the

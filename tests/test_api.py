@@ -114,3 +114,39 @@ def test_refining_retry_without_complete_cache_keeps_initial_request(tmp_path, m
         response = client.post(f"/api/jobs/{identifier}/retry")
         assert response.status_code == 202 and response.json()["status"] == "queued"
         assert (directory / "request.json").read_bytes() == original
+
+
+def test_waveform_is_real_bounded_and_restricted(tmp_path):
+    import numpy as np
+    import soundfile as sf
+
+    app = create_app(tmp_path, start_worker=False)
+    with TestClient(app) as client:
+        identifier = client.post("/api/jobs", files={"file": ("test.wav", b"x")}).json()["id"]
+        directory = tmp_path / identifier
+        url = f"/api/jobs/{identifier}/waveform"
+        assert client.get(url).status_code == 404
+        (directory / "result.json").write_text('{"duration": 1}')
+        samples = np.zeros((4800, 2), dtype=np.float32)
+        samples[100, 1] = 0.75
+        sf.write(directory / "audio.wav", samples, 4800, subtype="FLOAT")
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.json()["duration"] == 1
+        assert len(response.json()["peaks"]) == 1200
+        assert max(response.json()["peaks"]) == 0.75
+        assert sum(response.json()["peaks"]) == 0.75
+        assert client.get(url, params={"source": "../input"}).status_code == 404
+        assert client.get(url, params={"source": "drums.wav"}).status_code == 404
+        samples[100, 1] = 0.25
+        sf.write(directory / "audio.wav", samples, 4800, subtype="FLOAT")
+        assert max(client.get(url).json()["peaks"]) == 0.25
+
+
+def test_missing_frontend_gives_build_instructions(tmp_path, monkeypatch):
+    monkeypatch.setattr("transcription.app.STATIC", tmp_path / "missing-web")
+    with TestClient(create_app(tmp_path / "data", start_worker=False)) as client:
+        response = client.get("/")
+        assert response.status_code == 503
+        assert "npm run build" in response.text
+        assert client.get("/api/jobs").status_code == 200
