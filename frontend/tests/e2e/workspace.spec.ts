@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import type { ScoreMetadata } from "../../app/types/studio";
 const id = "a".repeat(32);
 const settings = {
   bpm: 120,
@@ -26,6 +27,8 @@ function sampleJob() {
     progress: { stage: "complete", progress: 1, message: "악보 생성 완료" },
     result: {
       generation: "render-1",
+      metadata: undefined as ScoreMetadata | undefined,
+      metadata_source_generation: undefined as string | undefined,
       duration: 8,
       options: { ...settings },
       grid: {
@@ -55,6 +58,9 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
   if (multiPage) job.result.pages.push("score-2.svg");
   let history = true;
   let saved: any = null;
+  let heading: ScoreMetadata | null = null;
+  let pendingHeading: ScoreMetadata | null = null;
+  let rejectHeading = false;
   let jobEvents = structuredClone(initialEvents);
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -152,8 +158,17 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       saved = route.request().postDataJSON();
       if (saved.events) jobEvents = saved.events;
       job.result.options = saved.options;
+      job.result.metadata = saved.metadata;
+      job.result.metadata_source_generation = undefined;
       job.result.generation = "render-2";
       job.result.grid.bpm = saved.options.bpm;
+      return route.fulfill({ status: 202, json: job });
+    }
+    if (path.endsWith("/score-metadata")) {
+      heading = route.request().postDataJSON();
+      if (rejectHeading) return route.fulfill({ status: 500, json: { detail: "악보 정보 적용 실패" } });
+      pendingHeading = heading;
+      job.status = "queued";
       return route.fulfill({ status: 202, json: job });
     }
     if (path.endsWith("/cancel")) {
@@ -168,6 +183,13 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       history = false;
       return route.fulfill({ status: 204 });
     }
+    if (pendingHeading) {
+      job.result.metadata = pendingHeading;
+      job.result.metadata_source_generation = job.result.generation;
+      job.result.generation += "-metadata";
+      job.status = "completed";
+      pendingHeading = null;
+    }
     return route.fulfill({ json: job });
   });
   await page.goto("/");
@@ -177,6 +199,8 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
   return {
     errors,
     getSaved: () => saved,
+    getHeading: () => heading,
+    rejectHeading: (value: boolean) => { rejectHeading = value; },
     fail: () => {
       job.status = "failed";
       (job as any).error = "모델 실행 실패";
@@ -189,6 +213,75 @@ async function openSession(page: Page) {
     page.getByRole("region", { name: "드럼 비트 편집기" }),
   ).toBeVisible();
 }
+
+test("apply score headings refreshes the preview and exports while preserving beat drafts", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  const form = page.getByRole("form", { name: "악보 정보" });
+  await expect(form.getByLabel("악보 제목")).toHaveValue("Studio session");
+  await expect(form.getByLabel("저자")).toHaveValue("Automatic drum transcription");
+  const cell = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+  await cell.click();
+  await page.getByRole("spinbutton", { name: "템포 BPM" }).fill("126");
+  await form.getByLabel("악보 제목").fill("새 악보 & Live");
+  await form.getByLabel("저자").fill("홍길동");
+  await page.getByRole("tab", { name: "악보 보기" }).click();
+  await expect(page.locator(".score-paper")).toHaveAttribute("src", /v=render-1$/);
+  await form.getByRole("button", { name: "적용", exact: true }).click();
+  await expect(page.locator(".score-paper")).toHaveAttribute("src", /v=render-1-metadata$/);
+  expect(state.getHeading()).toEqual({ title: "새 악보 & Live", author: "홍길동" });
+  await expect(form.getByRole("button", { name: "적용", exact: true })).toBeDisabled();
+  await expect(page.getByRole("spinbutton", { name: "템포 BPM" })).toHaveValue("126");
+  await page.getByRole("button", { name: "내보내기" }).click();
+  await expect(page.getByRole("menuitem", { name: "PDF 악보" })).toHaveAttribute("href", /v=render-1-metadata&download=true$/);
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "비트 편집" }).click();
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "실행 취소", exact: true }).click();
+  await expect(cell).toHaveAttribute("aria-pressed", "false");
+  await page.getByRole("button", { name: "다시 실행", exact: true }).click();
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect.poll(() => state.getSaved()?.metadata).toEqual(state.getHeading());
+  expect(state.getSaved().events).toHaveLength(3);
+  await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+  await page.reload();
+  await expect(form.getByLabel("악보 제목")).toHaveValue("새 악보 & Live");
+  await expect(page.getByRole("button", { name: /Studio session/ })).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test("heading drafts guard navigation and survive a failed apply", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  await page.getByLabel("악보 제목").fill("Draft title");
+  await page.getByRole("button", { name: "새 세션", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "편집 내용을 버릴까요?" })).toBeVisible();
+  await page.getByRole("button", { name: "편집 계속" }).click();
+  state.rejectHeading(true);
+  await page.getByRole("button", { name: "적용", exact: true }).click();
+  await expect(page.getByText("악보 정보 적용 실패", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("악보 제목")).toHaveValue("Draft title");
+  await page.getByRole("tab", { name: "악보 보기" }).click();
+  await expect(page.locator(".score-paper")).toHaveAttribute("src", /v=render-1$/);
+  state.rejectHeading(false);
+  await page.getByRole("button", { name: "적용", exact: true }).click();
+  await expect(page.locator(".score-paper")).toHaveAttribute("src", /v=render-1-metadata$/);
+  expect(state.errors).toEqual([]);
+});
+
+test("compact session properties can remove the author credit", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "속성 패널", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "세션 속성" });
+  await dialog.getByLabel("저자").fill("");
+  await dialog.getByRole("button", { name: "적용", exact: true }).click();
+  await expect.poll(() => state.getHeading()).toEqual({ title: "Studio session", author: "" });
+  await expect(dialog.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+  await expect(dialog.getByLabel("저자")).toHaveValue("");
+  expect(state.errors).toEqual([]);
+});
 
 test("edit, undo, redo, save, score and export use session data", async ({
   page,

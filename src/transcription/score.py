@@ -5,7 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from .models import Options
+from .models import Options, ScoreMetadata
 
 DIVISIONS = 12
 KIT = {
@@ -71,11 +71,60 @@ def quantize(events: list[dict], duration: float, options: Options) -> dict:
     }
 
 
-def write_musicxml(grid: dict, title: str, target: Path) -> None:
+def write_heading_credits(root: ET.Element, title: str, author: str) -> None:
+    # Explicit credits make both headings visible in MuseScore and Verovio.
+    for credit in root.findall("credit"):
+        if credit.findtext("credit-type") in {"title", "composer"}:
+            root.remove(credit)
+    index = list(root).index(root.find("part-list"))
+    for kind, text, x, y, size, align in (
+        ("title", title, 600, 1617.14, 22, "center"),
+        ("composer", author, 1120, 1557.14, 12, "right"),
+    ):
+        if not text:
+            continue
+        credit = ET.Element("credit", page="1")
+        el(credit, "credit-type", kind)
+        el(
+            credit,
+            "credit-words",
+            text,
+            **{
+                "default-x": x,
+                "default-y": y,
+                "font-size": size,
+                "justify": align,
+                "valign": "top",
+            },
+        )
+        root.insert(index, credit)
+        index += 1
+
+
+def update_musicxml_metadata(source: Path, target: Path, metadata: ScoreMetadata) -> None:
+    """Change the heading without rebuilding any saved notation."""
+    tree = ET.parse(source)
+    root = tree.getroot()
+    root.find("work/work-title").text = metadata.title
+    identification = root.find("identification")
+    for creator in identification.findall("creator[@type='composer']"):
+        identification.remove(creator)
+    if metadata.author:
+        creator = ET.Element("creator", type="composer")
+        creator.text = metadata.author
+        identification.insert(0, creator)
+    write_heading_credits(root, metadata.title, metadata.author)
+    tree.write(target, encoding="utf-8", xml_declaration=True)
+
+
+def write_musicxml(
+    grid: dict, title: str, target: Path, author: str = "Automatic drum transcription"
+) -> None:
     root = ET.Element("score-partwise", version="4.0")
     el(el(root, "work"), "work-title", title)
     identification = el(root, "identification")
-    el(identification, "creator", "Automatic drum transcription", type="composer")
+    if author:
+        el(identification, "creator", author, type="composer")
     el(el(identification, "encoding"), "software", "Drum Score")
     defaults = el(root, "defaults")
     scaling = el(defaults, "scaling")
@@ -88,6 +137,7 @@ def write_musicxml(grid: dict, title: str, target: Path) -> None:
     for side in ("left", "right", "top", "bottom"):
         el(margins, f"{side}-margin", 80)
     part_list = el(root, "part-list")
+    write_heading_credits(root, title, author)
     part_definition = el(part_list, "score-part", id="P1")
     el(part_definition, "part-name", "Drum set")
     el(part_definition, "part-abbreviation", "Dr.")

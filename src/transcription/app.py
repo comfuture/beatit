@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .models import Options, Revision
+from .models import Options, Revision, ScoreMetadata
 from .pipeline import MAX_DURATION, save_json
 from .runtime import capabilities
 from .score_layout import score_layout
@@ -167,7 +167,17 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
                 identifier,
                 revision.options.model_dump(),
                 [e.model_dump() for e in revision.events] if revision.events is not None else None,
+                metadata=revision.metadata.model_dump() if revision.metadata is not None else None,
             )
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from None
+        return get_job(identifier)
+
+    @app.post("/api/jobs/{identifier}/score-metadata", status_code=202)
+    def revise_metadata(identifier: str, metadata: ScoreMetadata):
+        get_job(identifier)
+        try:
+            store.revise(identifier, None, metadata=metadata.model_dump())
         except ValueError as error:
             raise HTTPException(409, str(error)) from None
         return get_job(identifier)

@@ -27,8 +27,14 @@ export interface Grid {
   step: number;
   mean_quantization_error_ms: number;
 }
+export interface ScoreMetadata {
+  title: string;
+  author: string;
+}
 export interface Result {
   generation: string;
+  metadata?: ScoreMetadata;
+  metadata_source_generation?: string;
   duration: number;
   options: Options;
   grid: Grid;

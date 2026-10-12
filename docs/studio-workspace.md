@@ -38,6 +38,11 @@ Processing still requires the local backend; this is not a PWA.
   its saved-grid start, clamped to zero for pickup bars, while preserving the
   playback and follow states. Measure targets scale with the page zoom.
 - Inspector: actual BPM, meter, bars and duration; draft hit counts; score settings;
+  editable score title and author with an explicit Apply action, also on mobile.
+  The title initially uses the source filename without its extension, then is stored
+  independently so naming a score never renames its source session. The author can
+  be cleared. Heading changes participate in the unsaved-change guard and the main
+  save action. Applying headings alone preserves unsaved rhythm edits and undo history.
   model warnings; worker log and confirmed deletion. Unsaved changes require an
   explicit discard before switching sessions and trigger a browser leave warning.
 
@@ -50,6 +55,14 @@ geometry to normalized measure bounds, including existing MuseScore and Verovio
 results. It caches by file metadata and verifies the complete measure count against
 the saved grid. Unsupported layouts remain viewable with follow disabled. Images
 stay in `<img>` elements; score SVG markup is never injected into the app DOM.
+
+`POST /api/jobs/{id}/score-metadata` queues a heading-only engraving from the saved
+MusicXML. It preserves notation, tempo, MIDI and event data without audio analysis
+or quantization. The worker publishes new SVG pages, MusicXML, analysis and ZIP
+together after rendering succeeds; MuseScore also regenerates the PDF. Verovio
+continues to offer SVG printing instead of PDF export. Failed rendering leaves the
+published files intact and supports retry. Explicit MusicXML title/composer credits
+make the heading visible in both renderers. Normal rhythm revisions retain metadata.
 
 ## References
 
@@ -81,6 +94,11 @@ Export UI checks initiate native ZIP, MusicXML, MIDI, PDF, JSON and SVG download
 verify filenames, retain editor/history state, and refresh without another download.
 Native downloads bypass Playwright API mocks, so actual payload delivery is checked
 separately against FastAPI with stored session artifacts.
+Heading-edit checks cover legacy defaults, mobile editing, author removal, failure,
+reload persistence, preview/export refresh, and preservation of rhythm drafts and
+undo/redo. An isolated MuseScore worker also regenerated a Korean title and author:
+the SVG preview and downloaded PDF showed both, all four measures remained mapped,
+and MIDI/event hashes were unchanged. Existing user sessions were not edited.
 The Python API suite checks real waveform transients, channel handling, cache
 invalidation and source restrictions, plus SVG measure bounds, final barline
 deduplication, Verovio viewport transforms and generation consistency.

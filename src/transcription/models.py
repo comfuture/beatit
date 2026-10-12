@@ -1,6 +1,7 @@
+from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Options(BaseModel):
@@ -39,6 +40,27 @@ class Event(BaseModel):
         return self
 
 
+class ScoreMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    title: str = Field(max_length=256)
+    author: str = Field(default="", max_length=256)
+
+    @field_validator("title", "author")
+    @classmethod
+    def single_line_xml_text(cls, value: str) -> str:
+        if any(
+            ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF or ord(char) in (0xFFFE, 0xFFFF)
+            for char in value
+        ):
+            raise ValueError("제목과 저자는 줄바꿈이나 제어 문자 없이 입력하세요.")
+        return value
+
+    @classmethod
+    def for_filename(cls, filename: str):
+        return cls(title=Path(filename).stem, author="Automatic drum transcription")
+
+
 class Revision(BaseModel):
     options: Options
     events: list[Event] | None = Field(default=None, max_length=100000)
+    metadata: ScoreMetadata | None = None

@@ -2,6 +2,7 @@ import {
   defaultOptions,
   type DrumEvent,
   type Job,
+  type ScoreMetadata,
   type SystemInfo,
 } from "~/types/studio";
 import { validateOptions } from "~/utils/rhythm";
@@ -13,6 +14,18 @@ export function useStudio() {
   const selectedFile = shallowRef<File | null>(null);
   const options = ref(defaultOptions());
   const revision = ref(defaultOptions());
+  const metadata = ref<ScoreMetadata>({ title: "", author: "" });
+  const savedMetadata = (job: Job): ScoreMetadata => ({
+    ...(job.result?.metadata || {
+      title: job.filename.replace(/\.[^.]+$/, ""),
+      author: "Automatic drum transcription",
+    }),
+  });
+  const metadataDirty = computed(
+    () =>
+      !!current.value?.result &&
+      JSON.stringify(metadata.value) !== JSON.stringify(savedMetadata(current.value)),
+  );
   const events = ref<DrumEvent[]>([]);
   const originalEvents = ref<DrumEvent[]>([]);
   const undoStack = ref<DrumEvent[][]>([]);
@@ -36,6 +49,7 @@ export function useStudio() {
   );
   const dirty = computed(
     () =>
+      metadataDirty.value ||
       eventsDirty.value ||
       (!!current.value?.result &&
         JSON.stringify(revision.value) !==
@@ -79,6 +93,12 @@ export function useStudio() {
     current.value = job;
     const next = job.result ? `${job.id}:${job.result.generation}` : "";
     if (next && next !== generation) {
+      // A heading-only generation preserves the saved rhythm and local edit history.
+      if (generation === `${job.id}:${job.result!.metadata_source_generation}`) {
+        metadata.value = savedMetadata(job);
+        generation = next;
+        return;
+      }
       loadingEvents.value = true;
       try {
         const loaded = await api<DrumEvent[]>(
@@ -88,6 +108,7 @@ export function useStudio() {
         events.value = loaded;
         originalEvents.value = copyEvents(loaded);
         revision.value = { ...job.result!.options };
+        metadata.value = savedMetadata(job);
         undoStack.value = [];
         redoStack.value = [];
         generation = next;
@@ -270,9 +291,42 @@ export function useStudio() {
     undoStack.value = [];
     redoStack.value = [];
     if (result.value) revision.value = { ...result.value.options };
+    if (current.value) metadata.value = savedMetadata(current.value);
+  }
+  async function applyMetadata() {
+    if (!current.value?.result || busy.value || loadingEvents.value || !metadataDirty.value)
+      return;
+    const token = selection;
+    mutating.value = true;
+    error.value = "";
+    try {
+      const job = await api<Job>(`/api/jobs/${current.value.id}/score-metadata`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(metadata.value),
+      });
+      await showJob(job, token);
+      await refreshHistory();
+      toast.add({
+        title: "악보 정보 적용을 시작했습니다",
+        description: "완료되면 악보 보기와 내보내기 파일이 갱신됩니다.",
+        icon: "i-lucide-check",
+      });
+    } catch (e) {
+      report(e);
+    } finally {
+      mutating.value = false;
+    }
   }
   async function save() {
     if (!current.value?.result || busy.value || loadingEvents.value) return;
+    if (
+      !eventsDirty.value &&
+      JSON.stringify(revision.value) === JSON.stringify(result.value!.options)
+    ) {
+      await applyMetadata();
+      return;
+    }
     try {
       validateOptions(revision.value);
     } catch (e) {
@@ -289,6 +343,7 @@ export function useStudio() {
         body: JSON.stringify({
           options: revision.value,
           events: eventsDirty.value ? events.value : null,
+          metadata: metadata.value,
         }),
       });
       await showJob(job, token);
@@ -342,6 +397,8 @@ export function useStudio() {
     selectedFile,
     options,
     revision,
+    metadata,
+    metadataDirty,
     events,
     error,
     uploading,
@@ -366,5 +423,6 @@ export function useStudio() {
     redo,
     resetEdits,
     save,
+    applyMetadata,
   };
 }

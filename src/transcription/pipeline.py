@@ -9,10 +9,10 @@ import zipfile
 from pathlib import Path
 
 from .engrave import render
-from .models import Options
+from .models import Options, ScoreMetadata
 from .rhythm import align_downbeat, estimate_tempo
 from .runtime import select_device
-from .score import KIT, quantize, write_musicxml
+from .score import KIT, quantize, update_musicxml_metadata, write_musicxml
 
 STEMS = ("kick", "snare", "toms", "hh", "cymbals")
 
@@ -312,7 +312,12 @@ def make_score(
     # Publish a complete generation atomically; never expose half-written revisions.
     generation = directory / ("render-" + str(time.time_ns()))
     generation.mkdir()
-    write_musicxml(grid, Path(request["filename"]).stem, generation / "score.musicxml")
+    metadata = (
+        ScoreMetadata.model_validate(request["metadata"])
+        if request.get("metadata")
+        else ScoreMetadata.for_filename(request["filename"])
+    )
+    write_musicxml(grid, metadata.title, generation / "score.musicxml", metadata.author)
     write_midi(grid["events"], generation / "score.mid", grid["bpm"], grid["meter"])
     write_midi(events, generation / "performance.mid", grid["bpm"], grid["meter"])
     save_json(generation / "events.json", events)
@@ -367,6 +372,7 @@ def make_score(
     result = {
         **analysis,
         "options": resolved.model_dump(),
+        "metadata": metadata.model_dump(),
         "grid": grid,
         "counts": counts,
         "renderer": rendered["renderer"],
@@ -377,9 +383,15 @@ def make_score(
         "tom_refinement": {key: value for key, value in tom_report.items() if key != "hits"},
         "generation": generation.name,
         "warnings": warnings,
+        "render_warnings": rendered["warnings"],
         "event_count": len(events),
         "elapsed_seconds": round(time.monotonic() - progress.started, 1),
     }
+    publish_score(directory, generation, result, progress)
+    return result
+
+
+def publish_score(directory: Path, generation: Path, result: dict, progress: Progress):
     save_json(generation / "analysis.json", result)
     with zipfile.ZipFile(generation / "score-bundle.zip", "w", zipfile.ZIP_DEFLATED) as archive:
         for file in sorted(generation.iterdir()):
@@ -387,12 +399,53 @@ def make_score(
                 archive.write(file, file.name)
     save_json(directory / "result.json", result)
     progress("complete", 1, "악보 생성 완료")
-    return result
+
+
+def revise_metadata(directory: Path, request: dict, progress: Progress):
+    saved = json.loads((directory / "result.json").read_text())
+    if saved["generation"] != request["source_generation"]:
+        raise ValueError("악보가 변경되었습니다. 새 악보를 불러온 뒤 다시 적용하세요.")
+    metadata = ScoreMetadata.model_validate(request["metadata"])
+    source = directory / saved["generation"]
+    generation = directory / ("render-" + str(time.time_ns()))
+    generation.mkdir()
+    progress("engraving", 0.8, "제목과 저자를 적용하여 악보를 다시 조판합니다.")
+    update_musicxml_metadata(source / "score.musicxml", generation / "score.musicxml", metadata)
+    for name in ("score.mid", "performance.mid", "events.json"):
+        shutil.copyfile(source / name, generation / name)
+    if (source / "tom-refinement.json").is_file():
+        shutil.copyfile(source / "tom-refinement.json", generation / "tom-refinement.json")
+    rendered = render(generation / "score.musicxml", generation, saved["options"]["renderer"])
+    result = {
+        **saved,
+        "metadata": metadata.model_dump(),
+        "metadata_source_generation": saved["generation"],
+        "generation": generation.name,
+        "pages": rendered["pages"],
+        "pdf": rendered["pdf"],
+        "renderer": rendered["renderer"],
+        "engraver_exit_code": rendered.get("exit_code", 0),
+        "render_warnings": rendered["warnings"],
+        "warnings": list(
+            dict.fromkeys(
+                [
+                    warning
+                    for warning in saved["warnings"]
+                    if warning not in saved.get("render_warnings", [])
+                ]
+                + rendered["warnings"]
+            )
+        ),
+    }
+    publish_score(directory, generation, result, progress)
 
 
 def run(directory: Path):
     progress = Progress(directory)
     request = json.loads((directory / "request.json").read_text())
+    if request.get("metadata_only"):
+        revise_metadata(directory, request, progress)
+        return
     if request.get("revision"):
         analysis = json.loads((directory / "analysis.json").read_text())
         if request.get("reestimate_tempo"):

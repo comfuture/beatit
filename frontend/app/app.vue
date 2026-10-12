@@ -11,6 +11,8 @@ const {
   selectedFile,
   options,
   revision,
+  metadata,
+  metadataDirty,
   events,
   error,
   uploading,
@@ -134,7 +136,7 @@ const maximumCount = computed(() =>
 );
 function navigate(action: () => void) {
   if (uploading.value || mutating.value) return;
-  if (dirty.value && !busy.value) {
+  if (dirty.value) {
     pendingAction = action;
     discardOpen.value = true;
   } else action();
@@ -609,6 +611,15 @@ onBeforeUnmount(() => {
                     </div>
                     <USeparator class="my-5"
                   /></template>
+                  <template v-if="result">
+                    <ScoreMetadataFields
+                      v-model="metadata"
+                      :dirty="metadataDirty"
+                      :disabled="busy || loadingEvents"
+                      @apply="studio.applyMetadata"
+                    />
+                    <USeparator class="my-5" />
+                  </template>
                   <div class="section-label">
                     {{ result ? "SCORE SETTINGS" : "TRANSCRIPTION" }}
                   </div>
@@ -725,9 +736,17 @@ onBeforeUnmount(() => {
     <USlideover
       v-model:open="inspectorOpen"
       title="세션 속성"
-      description="템포, 박자 및 채보 설정"
+      description="악보 정보, 템포, 박자 및 채보 설정"
       ><template #body
-        ><SessionOptions
+        ><template v-if="result">
+          <ScoreMetadataFields
+            v-model="metadata"
+            :dirty="metadataDirty"
+            :disabled="busy || loadingEvents"
+            @apply="studio.applyMetadata"
+          />
+          <USeparator class="my-5" />
+        </template><SessionOptions
           v-if="result"
           v-model="revision"
           :system="system"
@@ -787,7 +806,7 @@ onBeforeUnmount(() => {
     <UModal
       v-model:open="discardOpen"
       title="편집 내용을 버릴까요?"
-      description="저장하지 않은 타격 및 악보 설정 변경이 있습니다."
+      description="저장하지 않은 타격, 악보 정보 또는 설정 변경이 있습니다."
       ><template #footer
         ><UButton
           label="편집 계속"

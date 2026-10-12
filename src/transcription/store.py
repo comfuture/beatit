@@ -9,6 +9,7 @@ import threading
 import time
 from pathlib import Path
 
+from .models import ScoreMetadata
 from .pipeline import save_json
 
 TERMINAL = {"completed", "failed", "cancelled"}
@@ -114,18 +115,27 @@ class JobStore:
         except (FileNotFoundError, json.JSONDecodeError):
             return default
 
-    def revise(self, identifier: str, options: dict, events=None):
+    def revise(self, identifier: str, options: dict | None, events=None, metadata=None):
         with self.lock:
             job = self.get(identifier)
             if job["status"] not in TERMINAL or not job["has_result"]:
                 raise ValueError("완료된 악보만 수정할 수 있습니다.")
             directory = self.directory(identifier)
+            saved = job["result"]
             request = {
                 "filename": job["filename"],
-                "options": options,
+                "options": options if options is not None else saved["options"],
                 "revision": True,
                 "events": events,
+                "metadata": metadata
+                if metadata is not None
+                else saved.get(
+                    "metadata", ScoreMetadata.for_filename(job["filename"]).model_dump()
+                ),
             }
+            if options is None:
+                request["metadata_only"] = True
+                request["source_generation"] = saved["generation"]
             save_json(directory / "request.json", request)
             save_json(
                 directory / "progress.json",
