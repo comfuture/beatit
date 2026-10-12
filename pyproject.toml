@@ -62,6 +62,9 @@ explicit = true
 [tool.uv]
 conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
 
+[tool.hatch.build]
+artifacts = ["src/transcription/static/web/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/transcription"]
 

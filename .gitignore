@@ -9,3 +9,10 @@ data/
 work/
 .DS_Store
 dist/
+node_modules/
+.nuxt/
+.output/
+src/transcription/static/web/
+frontend/test-results/
+frontend/playwright-report/
+frontend/dist

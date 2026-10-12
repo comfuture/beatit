@@ -1,3 +1,10 @@
+FROM node:24-bookworm-slim AS frontend
+WORKDIR /web
+COPY frontend/package*.json ./
+RUN npm ci --ignore-scripts
+COPY frontend ./
+RUN npx nuxt generate
+
 FROM python:3.12-slim-bookworm
 COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg git libgomp1 build-essential pkg-config libopus-dev \
@@ -6,6 +13,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --extra cpu --no-dev --no-install-project
 COPY src ./src
+COPY --from=frontend /web/.output/public ./src/transcription/static/web
 RUN uv sync --frozen --extra cpu --no-dev
 ENV PATH="/app/.venv/bin:$PATH" DRUM_DATA_DIR=/app/data
 EXPOSE 8000
