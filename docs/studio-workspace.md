@@ -81,7 +81,12 @@ and the time ruler/playhead arrangement in
 ## Verification
 
 Run `npm run typecheck`, `npm test`, `npm run build` and `npm run test:e2e` in
-`frontend/`. Playwright covers import, queue progress, cancellation/retry/failure,
+`frontend/`. Playwright serves the generated `.output/public` files through a local
+Vite preview server, avoiding Nuxt dev-server compilation during the first test.
+Local E2E runs build automatically; CI uses its preceding build step. Set
+`BEATIT_WEB_URL` to test an existing server instead. CI retains failed-test traces
+and error context as artifacts for seven days.
+Playwright covers import, queue progress, cancellation/retry/failure,
 editing, undo/redo, regeneration payloads, draft navigation, score/export, audio
 transport/source switching, resizing and compact layouts with isolated API fixtures.
 Score-follow coverage includes real audio playback, seeking across pages, zoom,
