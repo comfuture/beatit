@@ -1155,13 +1155,33 @@ a:focus-visible,
   flex: 1;
   background: #292b30;
 }
-.score-paper {
-  display: block;
-  max-width: none;
+.score-follow-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 15px;
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-text-muted);
+  font-size: 10px;
+}
+.score-sheet {
+  position: relative;
   margin: 24px auto 36px;
   background: white;
-  border: 1px solid #ffffff66;
   box-shadow: 0 4px 16px #0003;
+}
+.score-paper {
+  display: block;
+  width: 100%;
+  max-width: none;
+}
+.score-measure-highlight {
+  position: absolute;
+  pointer-events: none;
+  background: #18b58b20;
+  border: 2px solid #159576b3;
+  border-radius: 3px;
 }
 .print-score {
   display: none;

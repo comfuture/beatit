@@ -48,8 +48,9 @@ function sampleJob() {
     },
   };
 }
-async function setup(page: Page) {
+async function setup(page: Page, { multiPage = false, layoutUnavailable = false } = {}) {
   let job = sampleJob();
+  if (multiPage) job.result.pages.push("score-2.svg");
   let history = true;
   let saved: any = null;
   let jobEvents = structuredClone(initialEvents);
@@ -94,6 +95,18 @@ async function setup(page: Page) {
       });
     if (path.endsWith("/events.json"))
       return route.fulfill({ json: jobEvents });
+    if (path.endsWith("/score-layout"))
+      return route.fulfill({ json: {
+        generation: job.result.generation,
+        measures: layoutUnavailable ? [] : Array.from({ length: 4 }, (_, index) => ({
+          bar: index + 1,
+          page: multiPage ? Math.floor(index / 2) + 1 : 1,
+          x: 0.1,
+          y: multiPage ? (index % 2 === 0 ? 0.1 : 0.75) : 0.1 + index * 0.2,
+          width: 0.8,
+          height: 0.08,
+        })),
+      }});
     if (path.endsWith(".svg"))
       return route.fulfill({
         contentType: "image/svg+xml",
@@ -355,5 +368,64 @@ test("beat editor follows playback, seeking and tab changes by default", async (
   await expect(bar).toHaveValue("3");
   await page.getByRole("button", { name: "정지", exact: true }).click();
   await expect(bar).toHaveValue("1");
+  expect(state.errors).toEqual([]);
+});
+
+test("score follows playing bars, scrolls and switches pages at the audio position", async ({ page }) => {
+  const state = await setup(page, { multiPage: true });
+  await openSession(page);
+  await page.getByRole("tab", { name: "악보 보기" }).click();
+  const follow = page.getByRole("switch", { name: "악보 재생 따라가기" });
+  const marker = page.locator(".score-measure-highlight");
+  const canvas = page.locator(".score-canvas");
+  const seek = page.getByRole("slider", { name: "오디오 재생 위치" });
+  await expect(follow).toBeChecked();
+  await expect(marker).toHaveAttribute("data-bar", "1");
+
+  await seek.press("ArrowRight");
+  await page.getByRole("button", { name: "재생", exact: true }).click();
+  await expect(marker).toHaveAttribute("data-bar", "2");
+  await page.getByRole("button", { name: "일시 정지", exact: true }).click();
+  await expect.poll(() => canvas.evaluate(e => e.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(async () => {
+    const a = await marker.boundingBox();
+    const b = await canvas.boundingBox();
+    return !!a && !!b && a.y >= b.y && a.y + a.height <= b.y + b.height;
+  }).toBe(true);
+
+  await seek.press("End");
+  await expect(page.locator(".score-paper")).toHaveAttribute("alt", /2페이지/);
+  await expect(marker).toHaveAttribute("data-bar", "4");
+  await page.getByRole("button", { name: "이전 페이지", exact: true }).click();
+  await expect(follow).not.toBeChecked();
+  await expect(page.locator(".score-paper")).toHaveAttribute("alt", /1페이지/);
+  await expect(marker).toHaveCount(0);
+  await follow.click();
+  await expect(page.locator(".score-paper")).toHaveAttribute("alt", /2페이지/);
+  await expect(marker).toHaveAttribute("data-bar", "4");
+
+  await page.getByRole("combobox", { name: "악보 확대" }).click();
+  await page.getByRole("option", { name: "150%", exact: true }).click();
+  await expect.poll(async () => {
+    const a = await marker.boundingBox();
+    const b = await canvas.boundingBox();
+    return !!a && !!b && a.y >= b.y && a.y + a.height <= b.y + b.height;
+  }).toBe(true);
+  await page.getByRole("tab", { name: "비트 편집" }).click();
+  await page.getByRole("tab", { name: "악보 보기" }).click();
+  await expect(marker).toHaveAttribute("data-bar", "4");
+  await page.getByRole("button", { name: "정지", exact: true }).click();
+  await expect(marker).toHaveAttribute("data-bar", "1");
+  await expect(page.locator(".score-paper")).toHaveAttribute("alt", /1페이지/);
+  expect(state.errors).toEqual([]);
+});
+
+test("score remains readable when measure positions are unavailable", async ({ page }) => {
+  const state = await setup(page, { layoutUnavailable: true });
+  await openSession(page);
+  await page.getByRole("tab", { name: "악보 보기" }).click();
+  await expect(page.getByRole("switch", { name: "악보 재생 따라가기" })).toBeDisabled();
+  await expect(page.locator(".score-paper")).toBeVisible();
+  await expect(page.locator(".score-measure-highlight")).toHaveCount(0);
   expect(state.errors).toEqual([]);
 });

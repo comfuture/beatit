@@ -1,4 +1,8 @@
 import type { DrumEvent, Grid } from "../types/studio";
+export function playbackBar(position: number, grid: Grid) {
+  const tick = (((position - grid.offset) * grid.bpm) / 60) * 12;
+  return Math.max(1, Math.min(grid.bars, Math.floor(tick / grid.bar_ticks) + 1));
+}
 export function eventTick(event: DrumEvent, grid: Grid) {
   return Math.max(
     0,

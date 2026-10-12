@@ -497,6 +497,7 @@ onBeforeUnmount(() => {
                       <ScoreViewer
                         v-else
                         :job="current"
+                        :position="position"
                         :url="studio.fileUrl"
                         :stale="dirty || busy"
                       /></section

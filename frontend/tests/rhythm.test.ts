@@ -5,6 +5,7 @@ import {
   formatTime,
   tickTime,
   validateOptions,
+  playbackBar,
 } from "../app/utils/rhythm";
 import type { Grid } from "../app/types/studio";
 const grid: Grid = {
@@ -17,6 +18,13 @@ const grid: Grid = {
   mean_quantization_error_ms: 0,
 };
 describe("editor timeline boundaries", () => {
+  it("shares playback bars across views including offsets and odd meters", () => {
+    expect(playbackBar(0, { ...grid, offset: 1 })).toBe(1);
+    expect(playbackBar(1.49, grid)).toBe(1);
+    expect(playbackBar(1.5, grid)).toBe(2);
+    expect(playbackBar(100, grid)).toBe(3);
+    expect(playbackBar(1.75, { ...grid, offset: 0, meter: '7/8', bar_ticks: 42 })).toBe(2);
+  });
   it("does not create negative events in pickup bars or beyond audio", () => {
     expect(canAddTick(0, grid, 4)).toBe(false);
     expect(canAddTick(12, grid, 4)).toBe(true);

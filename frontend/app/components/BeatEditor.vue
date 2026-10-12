@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { kit, type DrumEvent, type Grid } from "~/types/studio";
-import { eventTick, tickTime, canAddTick } from "~/utils/rhythm";
+import { eventTick, tickTime, canAddTick, playbackBar } from "~/utils/rhythm";
 const props = defineProps<{
   events: DrumEvent[];
   grid: Grid;
@@ -41,13 +41,7 @@ watch(
   [() => props.position, follow, () => props.grid],
   () => {
     if (follow.value)
-      bar.value = Math.max(
-        1,
-        Math.min(
-          props.grid.bars,
-          Math.floor(playbackTick.value / props.grid.bar_ticks) + 1,
-        ),
-      );
+      bar.value = playbackBar(props.position, props.grid);
   },
   { immediate: true },
 );

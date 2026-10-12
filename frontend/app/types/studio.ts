@@ -42,6 +42,14 @@ export interface Result {
   warnings: string[];
   tom_refinement?: { enabled: boolean };
 }
+export interface ScoreMeasure {
+  bar: number;
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 export interface Job {
   id: string;
   filename: string;

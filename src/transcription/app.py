@@ -13,6 +13,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .models import Options, Revision
 from .pipeline import MAX_DURATION, save_json
 from .runtime import capabilities
+from .score_layout import score_layout
 from .store import JobStore
 from .waveform import waveform_peaks
 
@@ -221,6 +222,19 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
             ".pdf": "application/pdf",
         }.get(path.suffix)
         return FileResponse(path, media_type=media_type, filename=path.name if download else None)
+
+    @app.get("/api/jobs/{identifier}/score-layout")
+    def layout(identifier: str, generation: str):
+        result = get_job(identifier).get("result")
+        if not result:
+            raise HTTPException(404, "악보가 준비되지 않았습니다.")
+        if generation != result["generation"]:
+            raise HTTPException(409, "악보가 변경되었습니다. 다시 불러오세요.")
+        try:
+            measures = score_layout(store.directory(identifier) / generation, result)
+        except (OSError, ValueError):
+            measures = []
+        return {"generation": generation, "measures": measures}
 
     @app.get("/api/jobs/{identifier}/waveform")
     def waveform(identifier: str, source: str = "audio.wav"):
