@@ -53,55 +53,63 @@ const editorPanels: SplitterItem[] = [
   { slot: "timeline", defaultSize: 34, minSize: 25, maxSize: 60 },
   { slot: "editor", defaultSize: 66, minSize: 35 },
 ];
+function downloadLink(filename: string) {
+  // Bypass Nuxt routing so downloads never change the workspace URL/history.
+  return {
+    href: studio.fileUrl(filename, true),
+    external: true,
+    download: filename,
+  };
+}
 const exportItems = computed(() => [
   [
     {
       label: "전체 파일 (.zip)",
       icon: "i-lucide-package",
-      href: studio.fileUrl("score-bundle.zip", true),
+      ...downloadLink("score-bundle.zip"),
     },
   ],
   [
     {
       label: "MusicXML",
       icon: "i-lucide-file-music",
-      href: studio.fileUrl("score.musicxml", true),
+      ...downloadLink("score.musicxml"),
     },
     {
       label: "MIDI · 악보 격자",
       icon: "i-lucide-piano",
-      href: studio.fileUrl("score.mid", true),
+      ...downloadLink("score.mid"),
     },
     {
       label: "MIDI · 원시 타격",
       icon: "i-lucide-piano",
-      href: studio.fileUrl("performance.mid", true),
+      ...downloadLink("performance.mid"),
     },
     ...(result.value?.pdf
       ? [
           {
             label: "PDF 악보",
             icon: "i-lucide-file-text",
-            href: studio.fileUrl("score.pdf", true),
+            ...downloadLink("score.pdf"),
           },
         ]
       : []),
     {
       label: "타격 데이터 (.json)",
       icon: "i-lucide-braces",
-      href: studio.fileUrl("events.json", true),
+      ...downloadLink("events.json"),
     },
     {
       label: "분석 데이터 (.json)",
       icon: "i-lucide-file-json",
-      href: studio.fileUrl("analysis.json", true),
+      ...downloadLink("analysis.json"),
     },
     {
       label: "SVG 페이지",
       icon: "i-lucide-file-image",
       children: (result.value?.pages || []).map((page, index) => ({
         label: `${index + 1}페이지`,
-        href: studio.fileUrl(page, true),
+        ...downloadLink(page),
       })),
     },
     ...(result.value?.tom_refinement?.enabled
@@ -109,7 +117,7 @@ const exportItems = computed(() => [
           {
             label: "탐 보정 내역",
             icon: "i-lucide-file-json",
-            href: studio.fileUrl("tom-refinement.json", true),
+            ...downloadLink("tom-refinement.json"),
           },
         ]
       : []),

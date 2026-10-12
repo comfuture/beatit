@@ -32,6 +32,8 @@ Processing still requires the local backend; this is not a PWA.
   meter. Playback follow scrolls the score panel and changes pages automatically;
   manual page navigation pauses follow, and the switch resumes it at the current
   audio position. Highlight overlays do not appear in print or exported files.
+  All export links use native browser downloads, bypassing Nuxt routing so the
+  workspace URL, browser history and unsaved edits remain unchanged.
   Clicking a measure (or focusing it and pressing Enter/Space) seeks the audio to
   its saved-grid start, clamped to zero for pickup bars, while preserving the
   playback and follow states. Measure targets scale with the page zoom.
@@ -75,6 +77,10 @@ Beat-follow checks cover whole-beat highlighting, playback without native
 `timeupdate` events, and exact beat/bar seeks at fractional tempos.
 Score-click checks cover positive/negative offsets, zoomed pages, keyboard
 activation, paused/playing transport and synchronization back to the beat editor.
+Export UI checks initiate native ZIP, MusicXML, MIDI, PDF, JSON and SVG downloads,
+verify filenames, retain editor/history state, and refresh without another download.
+Native downloads bypass Playwright API mocks, so actual payload delivery is checked
+separately against FastAPI with stored session artifacts.
 The Python API suite checks real waveform transients, channel handling, cache
 invalidation and source restrictions, plus SVG measure bounds, final barline
 deduplication, Verovio viewport transforms and generation consistency.

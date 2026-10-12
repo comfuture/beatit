@@ -224,6 +224,50 @@ test("edit, undo, redo, save, score and export use session data", async ({
   expect(state.errors).toEqual([]);
 });
 
+test("all exports start native downloads without navigation or losing editor state", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  const originalUrl = page.url();
+  const historyLength = await page.evaluate(() => history.length);
+  const downloads: string[] = [];
+  page.on("download", download => downloads.push(download.suggestedFilename()));
+  const edited = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+  await edited.click();
+  for (const [label, filename] of [
+    ["전체 파일 (.zip)", "score-bundle.zip"],
+    ["MusicXML", "score.musicxml"],
+    ["MIDI · 악보 격자", "score.mid"],
+    ["MIDI · 원시 타격", "performance.mid"],
+    ["PDF 악보", "score.pdf"],
+    ["타격 데이터 (.json)", "events.json"],
+    ["분석 데이터 (.json)", "analysis.json"],
+    ["1페이지", "score-1.svg"],
+  ] as const) {
+    await page.getByRole("button", { name: "내보내기", exact: true }).click();
+    if (filename.endsWith(".svg"))
+      await page.getByRole("menuitem", { name: "SVG 페이지", exact: true }).hover();
+    const downloadStarted = page.waitForEvent("download");
+    await page.getByRole("menuitem", { name: label, exact: true }).click();
+    const download = await downloadStarted;
+    expect(download.suggestedFilename()).toBe(filename);
+    expect(new URL(download.url()).pathname).toBe(`/api/jobs/${id}/files/${filename}`);
+    // Native downloads bypass page API mocks. Check initiation here; actual
+    // file delivery is exercised separately against the FastAPI artifact server.
+    await download.cancel();
+    await expect(page).toHaveURL(originalUrl);
+    expect(await page.evaluate(() => history.length)).toBe(historyLength);
+    await expect(edited).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "실행 취소", exact: true })).toBeEnabled();
+  }
+  expect(page.context().pages()).toHaveLength(1);
+  await page.getByRole("button", { name: "실행 취소", exact: true }).click();
+  await page.reload();
+  await expect(page).toHaveURL(originalUrl);
+  await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+  expect(downloads).toHaveLength(8);
+  expect(state.errors).toEqual([]);
+});
+
 test("draft guard and reversible navigation preserve unsaved work", async ({
   page,
 }) => {
