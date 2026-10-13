@@ -5,6 +5,8 @@ export default defineNuxtConfig({
   ssr: false,
   modules: ["@nuxt/ui"],
   css: ["~/assets/css/main.css"],
+  // Keep disabled: DevTools 3 uses the default export removed in patched simple-git 4.
+  // Revisit the package override before enabling DevTools.
   devtools: { enabled: false },
   ui: { fonts: false },
   colorMode: { preference: "dark", fallback: "dark" },
