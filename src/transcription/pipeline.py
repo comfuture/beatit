@@ -385,6 +385,9 @@ def make_score(
         "warnings": warnings,
         "render_warnings": rendered["warnings"],
         "event_count": len(events),
+        # Review decisions belong to this published edit, just like its events.
+        # The client rechecks them if the timing grid changes.
+        "beat_review": request.get("beat_review"),
         "elapsed_seconds": round(time.monotonic() - progress.started, 1),
     }
     publish_score(directory, generation, result, progress)

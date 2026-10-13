@@ -115,7 +115,9 @@ class JobStore:
         except (FileNotFoundError, json.JSONDecodeError):
             return default
 
-    def revise(self, identifier: str, options: dict | None, events=None, metadata=None):
+    def revise(
+        self, identifier: str, options: dict | None, events=None, metadata=None, beat_review=None
+    ):
         with self.lock:
             job = self.get(identifier)
             if job["status"] not in TERMINAL or not job["has_result"]:
@@ -127,6 +129,7 @@ class JobStore:
                 "options": options if options is not None else saved["options"],
                 "revision": True,
                 "events": events,
+                "beat_review": beat_review if beat_review is not None else saved.get("beat_review"),
                 "metadata": metadata
                 if metadata is not None
                 else saved.get(

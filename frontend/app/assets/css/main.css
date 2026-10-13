@@ -799,10 +799,11 @@ a:focus-visible,
   width: 100%;
   height: 100%;
   min-height: 0;
+  overflow-y: auto;
 }
 .wave-area {
   flex: 1;
-  min-height: 35px;
+  min-height: 122px;
   display: flex;
   flex-direction: column;
   padding: 0 20px;
@@ -821,7 +822,7 @@ a:focus-visible,
   position: relative;
   cursor: crosshair;
   flex: 1;
-  min-height: 20px;
+  min-height: 72px;
   background: repeating-linear-gradient(
     to right,
     transparent 0,
@@ -831,6 +832,21 @@ a:focus-visible,
   );
   border-bottom: 1px solid var(--ui-border);
   color: #6cab99;
+  touch-action: none;
+  user-select: none;
+}
+.wave-selection-help {
+  flex-shrink: 0;
+  padding: 3px 0;
+  color: var(--ui-text-muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.wave-track.selecting {
+  cursor: col-resize;
+}
+.clear-playback-range {
+  flex-shrink: 0;
 }
 .wave-track.drums {
   color: #a195c6;
@@ -895,6 +911,75 @@ a:focus-visible,
   border-top: 1px solid var(--ui-border);
   background: var(--ui-bg-muted);
   flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.playback-tracks {
+  display: flex;
+  gap: 8px;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+}
+.playback-track {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.track-volume-button {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.track-volume-popover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  min-width: 96px;
+  font-size: 11px;
+  color: var(--ui-text-muted);
+}
+.track-volume-popover strong {
+  font-size: 14px;
+  color: var(--ui-text-highlighted);
+}
+.track-volume-slider {
+  height: 128px;
+  width: 32px;
+}
+.playback-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 3px 16px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  background: var(--ui-bg-muted);
+  flex-shrink: 0;
+}
+.playback-status.has-selection {
+  background: color-mix(in srgb, var(--ui-primary) 6%, var(--ui-bg-muted));
+  padding-block: 6px;
+}
+.playback-selection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.playback-region {
+  position: absolute;
+  inset-block: 0;
+  background: color-mix(in srgb, var(--ui-primary) 12%, transparent);
+  border-inline: 1px solid var(--ui-primary);
+  pointer-events: none;
+}
+.editor-playback-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 .transport-buttons {
   display: flex;
@@ -911,18 +996,14 @@ a:focus-visible,
   color: var(--ui-text-dimmed);
   font-size: 10px;
 }
+.transport-clock-compact {
+  display: none;
+}
 .transport-right {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 10px;
-}
-.volume-icon {
-  width: 13px;
-  color: var(--ui-text-muted);
-}
-.volume-slider {
-  width: 64px;
 }
 .edit-panel {
   height: 100%;
@@ -978,15 +1059,88 @@ a:focus-visible,
   padding: 14px 18px;
   gap: 12px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .editor-controls label {
   font-size: 10px;
+}
+.review-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 18px 12px;
+  font-size: 11px;
+}
+.review-summary strong {
+  color: var(--ui-text);
+  font-weight: 500;
+}
+.review-summary p,
+.review-help {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  line-height: 1.7;
+}
+.review-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.review-summary-actions > span {
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+}
+.beat-reviews {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 18px 0;
+  flex-shrink: 0;
+}
+.beat-review {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--ui-error) 24%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ui-error) 8%, transparent);
+  font-size: 11px;
+}
+.beat-review strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ui-error);
+  font-weight: 500;
+}
+.beat-review p {
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  line-height: 1.7;
+  margin-top: 3px;
+}
+.beat-review > button {
+  flex-shrink: 0;
+}
+.beat-review.resolved {
+  border-color: var(--ui-border);
+  background: transparent;
+}
+.beat-review.resolved strong {
+  color: var(--ui-text-muted);
+}
+.beat-review.resolved p {
+  display: none;
 }
 .beat-grid-scroll {
   overflow: auto;
   padding: 0 18px;
   flex: 1;
-  min-height: 230px;
+  min-height: 286px;
 }
 .beat-grid {
   display: grid;
@@ -1109,6 +1263,20 @@ a:focus-visible,
   width: 3px;
   background: #6d817b;
   border-radius: 1px 1px 0 0;
+}
+/* An independent translucent layer keeps warnings visible during playback,
+   hover and active hits without hiding the instrument colors or playhead. */
+.beat-number.needs-review,
+.beat-cell.needs-review,
+.velocity-cell.needs-review {
+  background-color: var(--ui-bg);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--ui-error) 14%, transparent),
+    color-mix(in srgb, var(--ui-error) 14%, transparent)
+  );
+}
+.beat-number.needs-review {
+  border-top: 2px solid color-mix(in srgb, var(--ui-error) 65%, transparent);
 }
 .editor-footer {
   display: flex;
@@ -1267,9 +1435,6 @@ a:focus-visible,
   .transport {
     gap: 8px;
   }
-  .volume-slider {
-    width: 40px;
-  }
   .session-metrics strong {
     font-size: 20px;
   }
@@ -1335,7 +1500,7 @@ a:focus-visible,
   }
   .beat-grid-scroll {
     padding: 0 12px;
-    min-height: 260px;
+    min-height: 286px;
   }
   .editor-footer {
     flex-wrap: wrap;
@@ -1347,22 +1512,26 @@ a:focus-visible,
   .transport {
     padding: 6px 10px;
     min-height: 49px;
+    gap: 6px;
   }
   .transport-clock {
-    font-size: 13px;
+    display: none;
   }
-  .transport-clock small {
-    font-size: 9px;
+  .transport-clock-compact {
+    display: inline;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+  .playback-tracks {
+    order: 1;
+    flex-basis: 100%;
+    justify-content: space-between;
   }
   .transport-buttons {
     gap: 0;
   }
   .transport-buttons button {
     padding: 5px;
-  }
-  .volume-icon,
-  .volume-slider {
-    display: none;
   }
   .transport-right {
     gap: 0;

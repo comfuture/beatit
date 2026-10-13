@@ -168,6 +168,9 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
                 revision.options.model_dump(),
                 [e.model_dump() for e in revision.events] if revision.events is not None else None,
                 metadata=revision.metadata.model_dump() if revision.metadata is not None else None,
+                beat_review=revision.beat_review.model_dump()
+                if revision.beat_review is not None
+                else None,
             )
         except ValueError as error:
             raise HTTPException(409, str(error)) from None

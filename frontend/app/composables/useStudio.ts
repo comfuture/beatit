@@ -1,11 +1,13 @@
 import {
   defaultOptions,
+  type BeatReview,
   type DrumEvent,
   type Job,
   type ScoreMetadata,
   type SystemInfo,
 } from "~/types/studio";
 import { validateOptions } from "~/utils/rhythm";
+import { mergeBeatReview, reviewAfterEdit } from "~/utils/beatReview";
 
 export function useStudio() {
   const jobs = ref<Job[]>([]);
@@ -28,8 +30,11 @@ export function useStudio() {
   );
   const events = ref<DrumEvent[]>([]);
   const originalEvents = ref<DrumEvent[]>([]);
-  const undoStack = ref<DrumEvent[][]>([]);
-  const redoStack = ref<DrumEvent[][]>([]);
+  const beatReview = ref<BeatReview>({ grid_key: "", beats: [] });
+  const originalReview = ref<BeatReview>({ grid_key: "", beats: [] });
+  type EditSnapshot = { events: DrumEvent[]; review: BeatReview };
+  const undoStack = ref<EditSnapshot[]>([]);
+  const redoStack = ref<EditSnapshot[]>([]);
   const error = ref("");
   const uploading = ref(false);
   const uploadProgress = ref(0);
@@ -47,10 +52,14 @@ export function useStudio() {
   const eventsDirty = computed(
     () => JSON.stringify(events.value) !== JSON.stringify(originalEvents.value),
   );
+  const reviewDirty = computed(
+    () => JSON.stringify(beatReview.value) !== JSON.stringify(originalReview.value),
+  );
   const dirty = computed(
     () =>
       metadataDirty.value ||
       eventsDirty.value ||
+      reviewDirty.value ||
       (!!current.value?.result &&
         JSON.stringify(revision.value) !==
           JSON.stringify(current.value.result.options)),
@@ -59,6 +68,13 @@ export function useStudio() {
   const toast = useToast();
   const copyEvents = (value: DrumEvent[]) =>
     value.map((event) => ({ ...event }));
+  const copyReview = (value: BeatReview): BeatReview => ({
+    grid_key: value.grid_key,
+    beats: value.beats.map((beat) => ({ ...beat, reasons: [...beat.reasons] })),
+  });
+  const snapshot = (): EditSnapshot => ({
+    events: copyEvents(events.value), review: copyReview(beatReview.value),
+  });
   let generation = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
@@ -107,6 +123,8 @@ export function useStudio() {
         if (token !== selection || disposed) return;
         events.value = loaded;
         originalEvents.value = copyEvents(loaded);
+        beatReview.value = mergeBeatReview(loaded, job.result!.grid, job.result!.beat_review);
+        originalReview.value = copyReview(beatReview.value);
         revision.value = { ...job.result!.options };
         metadata.value = savedMetadata(job);
         undoStack.value = [];
@@ -148,6 +166,8 @@ export function useStudio() {
     error.value = "";
     events.value = [];
     originalEvents.value = [];
+    beatReview.value = { grid_key: "", beats: [] };
+    originalReview.value = { grid_key: "", beats: [] };
     undoStack.value = [];
     redoStack.value = [];
     loadingEvents.value = true;
@@ -168,6 +188,8 @@ export function useStudio() {
     error.value = "";
     events.value = [];
     originalEvents.value = [];
+    beatReview.value = { grid_key: "", beats: [] };
+    originalReview.value = { grid_key: "", beats: [] };
     undoStack.value = [];
     redoStack.value = [];
     selectedFile.value = null;
@@ -266,28 +288,43 @@ export function useStudio() {
       mutating.value = false;
     }
   }
-  function editEvents(next: DrumEvent[]) {
-    undoStack.value.push(copyEvents(events.value));
+  function rememberEdit() {
+    undoStack.value.push(snapshot());
     if (undoStack.value.length > 60) undoStack.value.shift();
     redoStack.value = [];
+  }
+  function editEvents(next: DrumEvent[]) {
+    if (!result.value || busy.value || loadingEvents.value) return;
+    rememberEdit();
+    beatReview.value = reviewAfterEdit(events.value, next, result.value.grid, beatReview.value);
     events.value = next;
+  }
+  function resolveBeat(tick: number) {
+    if (busy.value || loadingEvents.value) return;
+    const beat = beatReview.value.beats.find((item) => item.tick === tick);
+    if (!beat || beat.resolved) return;
+    rememberEdit();
+    beat.resolved = true;
   }
   function undo() {
     const previous = undoStack.value.pop();
     if (previous) {
-      redoStack.value.push(copyEvents(events.value));
-      events.value = previous;
+      redoStack.value.push(snapshot());
+      events.value = previous.events;
+      beatReview.value = previous.review;
     }
   }
   function redo() {
     const next = redoStack.value.pop();
     if (next) {
-      undoStack.value.push(copyEvents(events.value));
-      events.value = next;
+      undoStack.value.push(snapshot());
+      events.value = next.events;
+      beatReview.value = next.review;
     }
   }
   function resetEdits() {
     events.value = copyEvents(originalEvents.value);
+    beatReview.value = copyReview(originalReview.value);
     undoStack.value = [];
     redoStack.value = [];
     if (result.value) revision.value = { ...result.value.options };
@@ -322,6 +359,7 @@ export function useStudio() {
     if (!current.value?.result || busy.value || loadingEvents.value) return;
     if (
       !eventsDirty.value &&
+      !reviewDirty.value &&
       JSON.stringify(revision.value) === JSON.stringify(result.value!.options)
     ) {
       await applyMetadata();
@@ -344,6 +382,7 @@ export function useStudio() {
           options: revision.value,
           events: eventsDirty.value ? events.value : null,
           metadata: metadata.value,
+          beat_review: beatReview.value,
         }),
       });
       await showJob(job, token);
@@ -400,6 +439,7 @@ export function useStudio() {
     metadata,
     metadataDirty,
     events,
+    beatReview,
     error,
     uploading,
     uploadProgress,
@@ -419,6 +459,7 @@ export function useStudio() {
     upload,
     action,
     editEvents,
+    resolveBeat,
     undo,
     redo,
     resetEdits,

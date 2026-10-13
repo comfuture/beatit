@@ -13,6 +13,10 @@ Processing still requires the local backend; this is not a PWA.
 - `USplitter`: persistent widths for workspace/inspector and heights for audio/editor.
   The inspector moves into `USlideover` below 1100 px. The timeline and editor remain
   stacked, and the beat grid scrolls without overflowing the viewport.
+  The audio pane reserves at least 72 px for the waveform plus the measured height
+  of its source selector, transport and status rows. Its pixel minimum adapts to
+  wrapped controls and range selection; the editor retains at least 240 px.
+  Short windows scroll the workspace instead of hiding the waveform or controls.
 - Import: validated single-file selection/drop, analysis settings, byte upload
   progress, actual queue status, cancellation and retry.
 - Audio: actual peak envelope, click/keyboard seeking, original/drum/kit stem
@@ -63,6 +67,132 @@ together after rendering succeeds; MuseScore also regenerates the PDF. Verovio
 continues to offer SVG printing instead of PDF export. Failed rendering leaves the
 published files intact and supports retry. Explicit MusicXML title/composer credits
 make the heading visible in both renderers. Normal rhythm revisions retain metadata.
+
+## Bar playback and drum audition
+
+The transport has independent **Audio** and **Drum Beat** toggles. Audio plays the
+selected SOURCE (original, separated drums or a kit stem); Drum Beat synthesizes
+the current draft with Web Audio. Both can be enabled for comparison. Turning both
+off pauses playback. Position, speed, pause and stop are shared. Each track has a
+separate volume button showing its current percentage. Clicking it opens a vertical
+**오디오 볼륨** or **드럼비트 볼륨** slider (0–100%, initially 80%) in a popover;
+the sliders are otherwise hidden. Escape or an outside click closes the popover,
+and keyboard/touch adjustment works on desktop and mobile. Levels change immediately, including during repeat playback,
+without restarting the pass or applying pending note edits early. Zero silences
+that track while its toggle remains on. Toggling tracks, changing SOURCE and
+repeating retain the chosen levels for the current session. Separate Web Audio
+gains smooth level changes before the output gates and shared compressor.
+
+**구간재생** in the beat editor plays the selected bar once by default and returns
+to its start. It clamps pickup bars and the final partial bar to the available audio,
+uses the saved grid's actual meter/tempo, and holds the editor on the selected bar.
+The waveform highlights the active range. Play resumes inside that range; Stop
+returns to its start. **선택구간 해제** appears only when a range is selected,
+beside its time range in the highlighted selection row below the transport. It
+restores full-song playback without moving the playhead or pausing an active
+audition, then disappears and returns keyboard focus to the waveform. Without a
+selection, the status explicitly says 전체 재생.
+Seeking outside the range also clears it. Choosing a bar manually turns off playback-follow so
+the selection is not immediately overwritten by the moving playhead.
+
+Drag across the waveform to choose an arbitrary time range. The selection is
+previewed while dragging and committed on release, with either drag direction
+supported. Pointer capture clips an out-of-waveform release to the audio bounds;
+touch uses the same selection behavior. A click or tiny pointer movement only
+seeks. Selection moves the playhead to its start, retaining the previous playing
+or paused state, and applies equally to both playback tracks. Escape cancels an
+unfinished drag or clears a committed selection; Shift+Left/Right expands a
+range by one second for keyboard users. The waveform includes a visible gesture
+hint. Changing SOURCE retains the chosen time range.
+
+Clicking or keyboard-seeking on the waveform reveals the corresponding editor
+bar; committing a drag reveals the bar at the selected range's start, including
+reverse drags. This explicit navigation works while paused or playing, even with
+**재생 따라가기** off, and leaves that switch unchanged. Playback-follow controls
+automatic bar changes as playback advances. Re-selecting the same time or range
+also reveals its bar after manual editor navigation; a cancelled drag does not.
+
+**구간 반복** in the playback toolbar repeats the selected bar or waveform range.
+It is off by default and disabled without a selection. Both enabled tracks restart
+at the same range start; the drums wait for media seeking to complete when audio
+is enabled. Turning repetition off lets the current pass finish normally. Pause
+holds the position and Stop returns to the range start; both retain the selection
+and repeat setting. Clearing the range or seeking outside it also turns repeat off.
+
+Each loop pass uses a snapshot of the draft drum notes. Edits and undo/redo during
+that pass are marked **수정 내용은 다음 반복부터 반영됩니다.** and become audible
+on the next pass, without saving or generating MIDI. Source, speed and track
+changes preserve the current pass's notes. Explicit seeking or starting playback
+again uses the latest draft, as does turning repeat off with pending edits.
+Outside repeat mode, draft edits continue to update playback immediately.
+
+With Audio enabled, the media element's clock drives both tracks. Buffering or
+source changes suspend drum scheduling until the source resumes. With Audio off,
+the AudioContext clock drives the drums, including when the source is unavailable.
+Short lookahead scheduling keeps synthesized notes aligned through speed changes.
+Both output gates are scheduled on the audio clock at the region end, cutting
+source audio and drum tails even if browser UI timers run late. A shared compressor
+controls peaks when both tracks are mixed. Pause, seek, edits and session teardown
+cancel obsolete scheduled voices; unmounting closes the context.
+
+The local synthesized kit covers all eight lanes, with velocity-sensitive kick,
+snare, three tom pitches, closed/open hi-hat and cymbal sounds. Closed hats choke
+ringing open hats. These are synthesized audition sounds, not realistic recorded
+kit samples. The editor uses current events and the saved grid, including unsaved
+edits and undo/redo. Note quantization and strongest-hit/hi-hat merging follow
+`score.mid`. The exported MIDI remains a saved-score artifact for external players;
+the editor does not load it for playback because it cannot contain pending edits.
+
+Tests cover range bounds, pickup/odd meters, quantization, source switching, mixed
+audio signals, drum-only playback with unavailable media, unsaved edits, synchronized
+note timing, stop/restart, mobile controls and silent outputs after a range ends.
+An OfflineAudioContext test renders the production kit and checks non-silent finite
+waveforms, velocity response, different voices, release and hi-hat choking.
+
+## Transcription review
+
+The editor treats automatic transcription as a draft. It highlights suspect
+numbered beats across the ruler, drum lanes and velocity lane with a translucent
+red layer, shows the reasons below the grid, and offers navigation to the next
+suspect bar. Both beats are marked when a pattern crosses a beat or bar boundary.
+The beat grouping follows the existing editor's quarter-note numbering, including
+the partial final beat in 7/8.
+
+The detector in `frontend/app/utils/beatReview.ts` uses named, independently
+testable rules rather than treating note strength as model confidence:
+
+| Rule | Trigger |
+| --- | --- |
+| Simultaneous hand parts | At least three distinct non-kick lanes on one quantized step, including toms. |
+| Hi-hat/cymbal sequence | Adjacent closed-hi-hat/cymbal onsets in either order within an eighth note; a recognized open hi-hat interrupts this pattern. |
+| Conflicting hats | Closed and open hi-hat on the same step. |
+| Duplicate hit | Multiple events for one instrument quantize to the same step. |
+| Timing mismatch | Onset is more than both 45 ms and 40% of one grid step away from the nearest step. |
+
+These are explainable heuristics, not proof of an error. In particular, intentional
+cymbal changes, flams, swing and loose timing can be flagged. The source model has
+a generic Cymbal lane; it cannot distinguish a crash from a ride here. No notes
+are automatically removed or changed, and unmarked beats still need listening.
+
+Editing a suspect beat keeps it pending until **Resolve** is pressed. Resolve can
+also accept the notes unchanged. Undo/redo includes both note edits and review
+decisions. Editing a resolved beat reopens it; editing other beats leaves it
+resolved. Resolved rows stay visible in a compact neutral style.
+
+Review state participates in the existing unsaved-change guard and is published
+atomically with a successful score regeneration (`beat_review` in the result and
+bundle analysis). A resolution-only save also works. Failed rendering does not
+publish the draft. Reloading and switching views retain saved decisions;
+heading-only updates preserve them and any current review drafts. Existing
+sessions without review metadata are checked on load. BPM, offset, meter or grid
+changes trigger fresh checking so old approvals are not applied to different
+beat locations. Future rules can add reason codes without replacing this workflow.
+
+Unit tests cover rule thresholds, negative cases, triplets, odd meters, cross-bar
+patterns, edited approvals and grid changes. Browser tests cover red bands,
+reasons, unchanged acceptance, edit-then-confirm, undo/redo, navigation, regeneration,
+reload and compact layout. The Python test runs a real Verovio regeneration to
+verify review and unchanged-event persistence, metadata updates and ZIP output.
 
 ## References
 

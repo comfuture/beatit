@@ -31,8 +31,19 @@ export interface ScoreMetadata {
   title: string;
   author: string;
 }
+export type ReviewReason = "too-many-hands" | "hat-cymbal-sequence" | "conflicting-hats" | "duplicate-hit" | "off-grid";
+export interface BeatReviewItem {
+  tick: number;
+  reasons: ReviewReason[];
+  resolved: boolean;
+}
+export interface BeatReview {
+  grid_key: string;
+  beats: BeatReviewItem[];
+}
 export interface Result {
   generation: string;
+  beat_review?: BeatReview | null;
   metadata?: ScoreMetadata;
   metadata_source_generation?: string;
   duration: number;

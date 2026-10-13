@@ -20,8 +20,19 @@ Audio/video → FFmpeg → Demucs drum stem → DrumSep kit stems → ADTOF onse
 
 Nuxt 4 and Nuxt UI provide a dark audio workspace with a session sidebar, resizable
 waveform/editor/inspector panels, source/stem playback, and score preview. The beat
-editor supports per-bar hit editing, velocity for new hits, undo/redo, and explicit
-score regeneration. FastAPI serves the generated UI and a single job queue.
+editor can audition its selected bar once. Independent Audio and Drum Beat toggles
+play the selected source, the current draft's synthesized drum pattern, or both
+together, with volume buttons opening separate vertical sliders for comparison; unsaved edits
+are audible without exporting MIDI. Drag across the waveform
+to select a playback range, then use **선택구간 해제** beside the selected time range
+to return to full-song playback. **구간 반복** repeats a selected range with both
+enabled tracks; drum edits become audible on the next pass. Editing includes per-bar hits, velocity for new hits,
+undo/redo, and explicit
+score regeneration. Suspect beats have a translucent red background and an
+explanation: review the recording, edit if needed, then resolve each beat.
+Resolutions support undo/redo and are saved with score regeneration.
+See [review rules](docs/studio-workspace.md#transcription-review) for detection limits.
+FastAPI serves the generated UI and a single job queue.
 Demucs uses `htdemucs`. The MDX23C
 DrumSep model splits the drums into kick, snare, toms, hi-hat, and cymbal stems. ADTOF,
 the pinned PyTorch Frame_RNN port, runs on the drum stem and each kit stem; their scores
