@@ -173,6 +173,9 @@ These are explainable heuristics, not proof of an error. In particular, intentio
 cymbal changes, flams, swing and loose timing can be flagged. The source model has
 a generic Cymbal lane; it cannot distinguish a crash from a ride here. No notes
 are automatically removed or changed, and unmarked beats still need listening.
+Hits earlier than the score offset minus half a grid step are excluded, matching
+score quantization and playback. Changes to those dropped hits do not reopen an
+accepted beat; hits exactly at the cutoff remain eligible for review.
 
 Editing a suspect beat keeps it pending until **Resolve** is pressed. Resolve can
 also accept the notes unchanged. Undo/redo includes both note edits and review

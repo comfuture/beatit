@@ -59,6 +59,29 @@ describe("explainable transcription review", () => {
     expect(detectBeatIssues([hit(38, 192), hit(42, 192), hit(49, 192)], grid)).toEqual([]);
   });
 
+  it("ignores pre-score hits but retains the quantizer's exact half-step boundary", () => {
+    const saved = { ...grid, offset: 1 };
+    const cutoff = saved.offset - saved.step / 24 * 60 / saved.bpm;
+    const dropped = [38, 38, 42, 46, 49].map((pitch) => ({
+      ...hit(pitch as DrumEvent["pitch"]), time: cutoff - 0.001,
+    }));
+    // Excluded hits must not create duplicates, hand/hat conflicts, timing
+    // warnings, or a hat/cymbal sequence with the first actual score note.
+    expect(detectBeatIssues([...dropped, hit(49, 3, saved)], saved)).toEqual([]);
+    expect(reasons([{ ...hit(42), time: cutoff - 0.001 }, hit(49, 3, saved)], saved)).toEqual([]);
+    expect(reasons([{ ...hit(38), time: cutoff }], saved)).toEqual(["off-grid"]);
+    expect(reasons([hit(38, 0, saved), hit(42, 0, saved), hit(49, 0, saved)], saved))
+      .toEqual(["too-many-hands"]);
+  });
+
+  it("does not reopen an accepted beat when only dropped pre-score hits change", () => {
+    const saved = { ...grid, offset: 1 };
+    const scored = [hit(38, 0, saved), hit(42, 0, saved), hit(49, 0, saved)];
+    const review = mergeBeatReview(scored, saved);
+    review.beats[0]!.resolved = true;
+    expect(reviewAfterEdit([...scored, hit(38)], scored, saved, review)).toEqual(review);
+  });
+
   it("retains corrected issues until explicit confirmation and keeps accepted notes unchanged", () => {
     const events = [hit(38), hit(42), hit(49)];
     const review = mergeBeatReview(events, grid);

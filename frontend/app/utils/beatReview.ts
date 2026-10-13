@@ -29,6 +29,8 @@ export function detectBeatIssues(events: DrumEvent[], grid: Grid): BeatReviewIte
   };
   const stepSeconds = (grid.step / 12) * 60 / grid.bpm;
   for (const event of events) {
+    // Match score quantization before eventTick clamps early hits to tick zero.
+    if (event.time < grid.offset - stepSeconds / 2) continue;
     const tick = eventTick(event, grid);
     if (tick >= grid.bars * grid.bar_ticks) continue;
     if (!groups.has(tick)) groups.set(tick, []);
@@ -79,9 +81,11 @@ export function mergeBeatReview(events: DrumEvent[], grid: Grid, saved?: BeatRev
 }
 
 export function reviewAfterEdit(before: DrumEvent[], after: DrumEvent[], grid: Grid, review: BeatReview) {
+  const halfStep = grid.step / 24 * 60 / grid.bpm;
   const signatures = (events: DrumEvent[]) => {
     const map = new Map<number, string[]>();
     for (const event of events) {
+      if (event.time < grid.offset - halfStep) continue;
       const beat = beatStart(eventTick(event, grid), grid);
       if (!map.has(beat)) map.set(beat, []);
       map.get(beat)!.push(JSON.stringify(event));
