@@ -1123,17 +1123,21 @@ test("touch drag selects a range and exposes clear selection on a compact screen
 });
 
 test("looped audio and drums apply edits on the next pass, including across source and rate changes", async ({ page }) => {
+  test.setTimeout(45000);
   await audioProbe(page);
   const state = await setup(page, { audioTone: true, events: [
-    { time: 2, pitch: 35, strength: 0.8 },
-    { time: 3.5, pitch: 38, strength: 0.8 },
-    { time: 4, pitch: 49, strength: 0.8 },
+    { time: 0, pitch: 35, strength: 0.8 },
+    { time: 5.5, pitch: 38, strength: 0.8 },
+    { time: 6, pitch: 49, strength: 0.8 },
   ] });
   await openSession(page);
   const repeat = page.getByRole("button", { name: "구간 반복", exact: true });
   await expect(repeat).toBeDisabled();
   await expect(repeat).toHaveAttribute("aria-pressed", "false");
-  await dragWaveform(page, 0.25, 0.5);
+  // Leave enough musical time for the real UI interactions on slower runners.
+  // A two-second range can loop or schedule/cancel the snare during these clicks.
+  await dragWaveform(page, 0, 0.75);
+  await page.getByRole("spinbutton", { name: "편집 마디" }).fill("3");
   await repeat.click();
   await page.getByRole("button", { name: "드럼비트", exact: true }).click();
   await page.getByRole("combobox", { name: "재생 속도" }).click();
@@ -1142,8 +1146,8 @@ test("looped audio and drums apply edits on the next pass, including across sour
   const count = (frequency: number) => page.evaluate(frequency =>
     (window as any).__audioProbe.notes.filter((note: any) => note.frequency === frequency).length, frequency);
   await expect.poll(() => count(145)).toBe(1);
-  await page.getByRole("button", { name: "2마디 13번째 격자 Snare", exact: true }).click();
-  await page.getByRole("button", { name: "2마디 13번째 격자 High tom", exact: true }).click();
+  await page.getByRole("button", { name: "3마디 13번째 격자 Snare", exact: true }).click();
+  await page.getByRole("button", { name: "3마디 13번째 격자 High tom", exact: true }).click();
   await expect(page.locator(".playback-status")).toContainText("수정 내용은 다음 반복부터 반영됩니다.");
   for (const label of ["오디오", "드럼비트"]) {
     const slider = await openTrackVolume(page, label);
@@ -1156,12 +1160,17 @@ test("looped audio and drums apply edits on the next pass, including across sour
   await page.getByRole("combobox", { name: "재생 속도" }).click();
   await page.getByRole("option", { name: "0.5×", exact: true }).click();
   await expect(page.locator("audio")).toHaveAttribute("src", /drums.wav$/);
-  await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeLessThan(3.2);
+  // Assert this is still the first pass; polling for an earlier position can
+  // accidentally succeed after a loop and conceal an expired interaction window.
+  expect(await count(145)).toBe(1);
+  expect(await count(185)).toBe(0);
+  expect(await count(235)).toBe(0);
+  await expect(page.locator(".playback-status")).toContainText("수정 내용은 다음 반복부터 반영됩니다.");
   await page.screenshot({ path: "test-results/loop-pending-edits.png", fullPage: true });
   // The not-yet-scheduled old snare still belongs to this pass; the new tom waits.
-  await expect.poll(() => count(185)).toBe(1);
+  await expect.poll(() => count(185), { timeout: 12000, intervals: [100] }).toBe(1);
   expect(await count(235)).toBe(0);
-  await expect.poll(() => count(235), { timeout: 8000 }).toBe(1);
+  await expect.poll(() => count(235), { timeout: 15000, intervals: [100] }).toBe(1);
   await expect(page.locator(".playback-status")).not.toContainText("수정 내용은 다음 반복부터 반영됩니다.");
   expect(await count(185)).toBe(1);
   expect(await count(145)).toBe(2);
@@ -1169,11 +1178,11 @@ test("looped audio and drums apply edits on the next pass, including across sour
   await expect(page.getByRole("button", { name: "일시 정지", exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => (window as any).__audioProbe.levels.some((level: number[]) => level[0]! > 0.01 && level[1]! > 0.01))).toBe(true);
   const tom = await page.evaluate(() => (window as any).__audioProbe.notes.find((note: any) => note.frequency === 235));
-  expect(tom.media + (tom.when - tom.time) * 0.5).toBeCloseTo(3.5, 1);
+  expect(tom.media + (tom.when - tom.time) * 0.5).toBeCloseTo(5.5, 1);
   // Disabling repetition lets this pass finish without restarting or losing the selection.
   await repeat.click();
   await expect(page.getByRole("button", { name: "재생", exact: true })).toBeVisible();
-  expect(Number(await page.getByRole("slider", { name: "오디오 재생 위치" }).getAttribute("aria-valuenow"))).toBeCloseTo(2, 1);
+  expect(Number(await page.getByRole("slider", { name: "오디오 재생 위치" }).getAttribute("aria-valuenow"))).toBeCloseTo(0, 1);
   expect(await count(145)).toBe(2);
   expect(state.getSaved()).toBeNull();
   expect(state.errors).toEqual([]);
