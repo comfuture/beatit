@@ -109,9 +109,9 @@ export function usePlaybackTransport(
     synth?.stop();
     gateOutputs();
   }
-  function resetNotes() {
+  function resetNotes(at = running ? clock() : position.value) {
     synth?.stop();
-    cursor = firstPlaybackHit(passNotes, running ? clock() : position.value);
+    cursor = firstPlaybackHit(passNotes, at);
   }
   function useDraftNotes() {
     passNotes = notes.value;
@@ -142,7 +142,9 @@ export function usePlaybackTransport(
     anchorPosition = position.value;
     anchorTime = context.currentTime;
     running = true;
-    resetNotes();
+    // The audio clock can advance during startup. Include the anchor's first
+    // note rather than searching from a slightly later second clock reading.
+    resetNotes(anchorPosition);
     gateOutputs();
     pump();
     if (!running) return;
