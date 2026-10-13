@@ -60,7 +60,29 @@ class ScoreMetadata(BaseModel):
         return cls(title=Path(filename).stem, author="Automatic drum transcription")
 
 
+class BeatReviewItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tick: int = Field(ge=0, le=1000000)
+    reasons: list[
+        Literal[
+            "too-many-hands",
+            "hat-cymbal-sequence",
+            "conflicting-hats",
+            "duplicate-hit",
+            "off-grid",
+        ]
+    ] = Field(min_length=1, max_length=5)
+    resolved: bool = False
+
+
+class BeatReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    grid_key: str = Field(max_length=256)
+    beats: list[BeatReviewItem] = Field(default_factory=list, max_length=100000)
+
+
 class Revision(BaseModel):
     options: Options
     events: list[Event] | None = Field(default=None, max_length=100000)
     metadata: ScoreMetadata | None = None
+    beat_review: BeatReview | None = None

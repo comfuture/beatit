@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { kit, type DrumEvent, type Grid } from "~/types/studio";
+import { kit, type BeatReview, type DrumEvent, type Grid } from "~/types/studio";
+import { beatStart, reviewReasons } from "~/utils/beatReview";
 import {
   eventTick,
   tickTime,
@@ -9,14 +10,18 @@ import {
 } from "~/utils/rhythm";
 const props = defineProps<{
   events: DrumEvent[];
+  review: BeatReview;
   grid: Grid;
   duration: number;
   disabled?: boolean;
+  playbackEnabled?: boolean;
   position: number;
 }>();
 const emit = defineEmits<{
   edit: [events: DrumEvent[]];
   seek: [time: number];
+  resolve: [tick: number];
+  playBar: [bar: number];
 }>();
 const bar = ref(1);
 const velocity = ref(100);
@@ -25,6 +30,25 @@ const cells = computed(() =>
   Math.round(props.grid.bar_ticks / props.grid.step),
 );
 const barOffset = computed(() => (bar.value - 1) * props.grid.bar_ticks);
+const pending = computed(() => props.review.beats.filter((beat) => !beat.resolved));
+const pendingTicks = computed(() => new Set(pending.value.map((beat) => beat.tick)));
+const barReviews = computed(() => props.review.beats.filter((beat) =>
+  beat.tick >= barOffset.value && beat.tick < barOffset.value + props.grid.bar_ticks,
+));
+function reviewTick(cell: number) {
+  return beatStart(barOffset.value + (cell - 1) * props.grid.step, props.grid);
+}
+function needsReview(cell: number) {
+  return pendingTicks.value.has(reviewTick(cell));
+}
+function nextIssue() {
+  const next = pending.value.find((beat) => beat.tick >= barOffset.value + props.grid.bar_ticks)
+    || pending.value[0];
+  if (!next) return;
+  follow.value = false;
+  setBar(Math.floor(next.tick / props.grid.bar_ticks) + 1);
+  emit("seek", Math.max(0, tickTime(next.tick, props.grid)));
+}
 const hits = computed(() => {
   const map = new Map<string, DrumEvent>();
   for (const event of props.events) {
@@ -40,10 +64,15 @@ const hits = computed(() => {
 const activeBeat = computed(() =>
   playbackBeat(props.position, props.grid, bar.value),
 );
+function revealPosition(time: number) {
+  // Explicit navigation reveals the chosen bar without changing playback follow.
+  bar.value = playbackBar(time, props.grid);
+}
+defineExpose({ revealPosition });
 watch(
   [() => props.position, follow, () => props.grid],
   () => {
-    if (follow.value) bar.value = playbackBar(props.position, props.grid);
+    if (follow.value) revealPosition(props.position);
   },
   { immediate: true },
 );
@@ -54,7 +83,12 @@ watch(
   },
 );
 function setBar(value: number) {
+  follow.value = false;
   bar.value = Math.max(1, Math.min(props.grid.bars, Math.round(value) || 1));
+}
+function playBar() {
+  follow.value = false;
+  emit("playBar", bar.value);
 }
 function toggle(pitch: DrumEvent["pitch"], cell: number) {
   if (props.disabled) return;
@@ -141,7 +175,38 @@ function keyboard(event: KeyboardEvent) {
             @click="emit('seek', Math.max(0, tickTime(barOffset, grid)))"
         /></UTooltip>
       </div>
-      <USwitch v-model="follow" label="재생 따라가기" size="xs" />
+      <div class="editor-playback-controls">
+        <UTooltip text="선택한 마디를 재생합니다. 툴바의 구간 반복을 켜면 반복해서 들을 수 있습니다.">
+          <UButton
+            label="구간재생"
+            icon="i-lucide-play"
+            :aria-label="`${bar}마디 구간재생`"
+            variant="soft"
+            size="xs"
+            :disabled="disabled || playbackEnabled === false"
+            @click="playBar"
+          />
+        </UTooltip>
+        <USwitch v-model="follow" label="재생 따라가기" size="xs" />
+      </div>
+    </div>
+    <div class="review-summary">
+      <div>
+        <strong>자동 전사는 초안입니다</strong>
+        <p>붉게 표시된 박자는 원음을 듣고 직접 확인하세요. 표시가 없는 박자에도 오류가 있을 수 있습니다.</p>
+      </div>
+      <div class="review-summary-actions">
+        <span role="status">확인 필요 {{ pending.length }}박자</span>
+        <UButton
+          label="다음 의심 박자"
+          icon="i-lucide-scan-search"
+          color="neutral"
+          variant="outline"
+          size="xs"
+          :disabled="!pending.length"
+          @click="nextIssue"
+        />
+      </div>
     </div>
     <div class="beat-grid-scroll">
       <div
@@ -159,7 +224,9 @@ function keyboard(event: KeyboardEvent) {
           :class="{
             downbeat: ((cell - 1) * grid.step) % 12 === 0,
             current: Math.floor(((cell - 1) * grid.step) / 12) === activeBeat,
+            'needs-review': needsReview(cell),
           }"
+          :title="needsReview(cell) ? '확인 필요 · 아래 판정 이유를 확인하세요' : undefined"
           >{{
             ((cell - 1) * grid.step) % 12 === 0
               ? ((cell - 1) * grid.step) / 12 + 1
@@ -183,9 +250,11 @@ function keyboard(event: KeyboardEvent) {
               ),
               downbeat: ((cell - 1) * grid.step) % 12 === 0,
               current: Math.floor(((cell - 1) * grid.step) / 12) === activeBeat,
+              'needs-review': needsReview(cell),
             }"
             :style="{ '--track-color': instrument.color }"
             :aria-label="`${bar}마디 ${cell}번째 격자 ${instrument.name}`"
+            :aria-describedby="needsReview(cell) ? `beat-review-${reviewTick(cell)}` : undefined"
             :aria-pressed="
               hits.has(
                 `${instrument.pitch}:${barOffset + (cell - 1) * grid.step}`,
@@ -217,6 +286,7 @@ function keyboard(event: KeyboardEvent) {
           class="velocity-cell"
           :class="{
             current: Math.floor(((cell - 1) * grid.step) / 12) === activeBeat,
+            'needs-review': needsReview(cell),
           }"
         >
           <i
@@ -238,6 +308,36 @@ function keyboard(event: KeyboardEvent) {
           />
         </div>
       </div>
+    </div>
+    <div v-if="barReviews.length" class="beat-reviews" aria-label="이 마디의 의심 박자">
+      <div
+        v-for="beat in barReviews"
+        :id="`beat-review-${beat.tick}`"
+        :key="beat.tick"
+        class="beat-review"
+        :class="{ resolved: beat.resolved }"
+        :data-review-tick="beat.tick"
+      >
+        <div>
+          <strong>
+            <UIcon :name="beat.resolved ? 'i-lucide-circle-check' : 'i-lucide-triangle-alert'" />
+            {{ bar }}마디 {{ Math.floor((beat.tick - barOffset) / 12) + 1 }}박
+            · {{ beat.resolved ? '해결됨' : '확인 필요' }}
+          </strong>
+          <p v-for="reason in beat.reasons" :key="reason">{{ reviewReasons[reason] }}</p>
+        </div>
+        <UButton
+          v-if="!beat.resolved"
+          label="해결"
+          icon="i-lucide-check"
+          color="neutral"
+          variant="outline"
+          size="xs"
+          :disabled="disabled"
+          @click="emit('resolve', beat.tick)"
+        />
+      </div>
+      <p class="review-help">직접 수정한 뒤 또는 현재 타격이 맞으면 그대로 ‘해결’을 누르세요. 해결 상태는 악보 재생성 시 함께 저장되며, 실행 취소로 되돌릴 수 있습니다.</p>
     </div>
     <div class="editor-footer">
       <span

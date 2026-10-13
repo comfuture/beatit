@@ -14,6 +14,7 @@ const {
   metadata,
   metadataDirty,
   events,
+  beatReview,
   error,
   uploading,
   uploadProgress,
@@ -32,12 +33,16 @@ const inspectorOpen = ref(false);
 const search = ref("");
 const view = ref("edit");
 const position = ref(0);
+const playbackEnabled = ref(true);
 const timeline = useTemplateRef("timeline");
+const beatEditor = useTemplateRef("beatEditor");
 const discardOpen = ref(false);
 const deleteOpen = ref(false);
 const helpOpen = ref(false);
 let pendingAction: (() => void) | null = null;
 const compact = ref(false);
+const timelineMinimumHeight = ref(260);
+const editorMinimumHeight = 240;
 const filteredJobs = computed(() =>
   jobs.value.filter((j) =>
     j.filename.toLowerCase().includes(search.value.toLowerCase()),
@@ -48,13 +53,13 @@ const tabs = [
   { label: "악보 보기", icon: "i-lucide-file-music", value: "score" },
 ];
 const mainPanels: SplitterItem[] = [
-  { slot: "workspace", defaultSize: 77, minSize: 50 },
+  { slot: "workspace", defaultSize: 77, minSize: 50, class: "overflow-y-auto" },
   { slot: "inspector", defaultSize: 23, minSize: 19, maxSize: 38 },
 ];
-const editorPanels: SplitterItem[] = [
-  { slot: "timeline", defaultSize: 34, minSize: 25, maxSize: 60 },
-  { slot: "editor", defaultSize: 66, minSize: 35 },
-];
+const editorPanels = computed<SplitterItem[]>(() => [
+  { slot: "timeline", sizeUnit: "px", defaultSize: 300, minSize: timelineMinimumHeight.value },
+  { slot: "editor", sizeUnit: "px", minSize: editorMinimumHeight },
+]);
 function downloadLink(filename: string) {
   // Bypass Nuxt routing so downloads never change the workspace URL/history.
   return {
@@ -394,7 +399,7 @@ onBeforeUnmount(() => {
             auto-save-id="beatit-layout-v1"
             :items="
               compact
-                ? [{ slot: 'workspace', defaultSize: 100, minSize: 100 }]
+                ? [{ slot: 'workspace', defaultSize: 100, minSize: 100, class: 'overflow-y-auto' }]
                 : mainPanels
             "
             class="workspace-splitter"
@@ -410,6 +415,7 @@ onBeforeUnmount(() => {
                   auto-save-id="beatit-editor-v1"
                   orientation="vertical"
                   :items="editorPanels"
+                  :style="{ minHeight: `${timelineMinimumHeight + editorMinimumHeight + 8}px` }"
                   :ui="{
                     handle: 'studio-divider',
                     panel: 'min-w-0 min-h-0 overflow-hidden',
@@ -420,7 +426,11 @@ onBeforeUnmount(() => {
                       ref="timeline"
                       :key="current.id"
                       :job="current"
+                      :events="events"
                       @time="position = $event"
+                      @navigate="beatEditor?.revealPosition($event)"
+                      @enabled="playbackEnabled = $event"
+                      @minimum-height="timelineMinimumHeight = $event"
                   /></template>
                   <template #editor
                     ><section class="edit-panel">
@@ -495,14 +505,19 @@ onBeforeUnmount(() => {
                       </div>
                       <BeatEditor
                         v-else-if="view === 'edit'"
+                        ref="beatEditor"
                         :key="current.id"
                         :events="events"
+                        :review="beatReview"
                         :grid="current.result.grid"
                         :duration="current.result.duration"
                         :position="position"
                         :disabled="busy"
+                        :playback-enabled="playbackEnabled"
                         @edit="studio.editEvents"
+                        @resolve="studio.resolveBeat"
                         @seek="timeline?.seek($event)"
+                        @play-bar="timeline?.playBar($event)"
                       />
                       <ScoreViewer
                         v-else
