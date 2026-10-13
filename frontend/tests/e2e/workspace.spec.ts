@@ -752,8 +752,19 @@ test("suspicious beat review is usable on a compact screen", async ({ page }) =>
   expect(state.errors).toEqual([]);
 });
 
-async function audioProbe(page: Page) {
-  await page.addInitScript(() => {
+async function audioProbe(page: Page, clockReadStep = 0) {
+  await page.addInitScript((clockReadStep) => {
+    if (clockReadStep) {
+      const readTime = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, "currentTime")!.get!;
+      let reads = 0;
+      Object.defineProperty(AudioContext.prototype, "currentTime", {
+        get() {
+          // Emulate audio rendering advancing between reads, so first-note
+          // coverage does not depend on crossing a render quantum by chance.
+          return readTime.call(this) + reads++ * clockReadStep / 1000;
+        },
+      });
+    }
     const state = { notes: [] as { frequency: number; time: number; media: number; when: number }[], levels: [] as number[][], analysers: [] as AnalyserNode[] };
     (window as any).__audioProbe = state;
     const connect = AudioNode.prototype.connect;
@@ -788,7 +799,7 @@ async function audioProbe(page: Page) {
       }));
       if (state.levels.length > 500) state.levels.shift();
     }, 20);
-  });
+  }, clockReadStep);
 }
 
 const auditionEvents: DrumEvent[] = [
@@ -832,7 +843,7 @@ test("bar playback mixes selected audio and draft drums then stops both at the b
 });
 
 test("drum-only playback hears unsaved edits and track toggles preserve position", async ({ page }) => {
-  await audioProbe(page);
+  await audioProbe(page, 5);
   const state = await setup(page, { events: auditionEvents, audioTone: true });
   await openSession(page);
   await page.getByRole("button", { name: "드럼비트", exact: true }).click();
@@ -1223,6 +1234,9 @@ async function openTrackVolume(page: Page, label: string) {
   await page.getByRole("button", { name: `${label} 볼륨 조절`, exact: true }).click();
   const slider = page.getByRole("slider", { name: `${label} 볼륨`, exact: true });
   await expect(slider).toHaveAttribute("aria-orientation", "vertical");
+  // CDP touch gestures below bypass Playwright's actionability checks. Wait for
+  // the popover's opening transform to settle before measuring drag coordinates.
+  await slider.click({ trial: true });
   return slider;
 }
 
