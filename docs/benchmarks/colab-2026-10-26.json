@@ -1,0 +1,136 @@
+{
+  "date": "2026-10-26",
+  "source_revision": "8d5f96b776276cbd0f8d3dc90b313a5aa51e7f12",
+  "cpu_baseline": {
+    "host": "chunsik",
+    "architecture": "aarch64",
+    "cpu_quota": 2,
+    "input_seconds": 12,
+    "pipeline_seconds": 290.3,
+    "full_song_measured": false
+  },
+  "colab_initial_session": [
+    {
+      "case": "case-12s-cold",
+      "duration_seconds": 12.0,
+      "wall_seconds": 39.926,
+      "stages": {
+        "converting": 1.051,
+        "demucs": 5.449,
+        "drumsep": 28.569,
+        "transcribing": 2.891,
+        "rhythm": 1.822,
+        "engraving": 0.142
+      },
+      "torch": "2.8.0+cu128",
+      "cuda": "12.8",
+      "gpu": "Tesla T4",
+      "peak_vram_bytes": 1679609856,
+      "events": 55,
+      "pages": 1,
+      "separation_device": "cuda",
+      "transcription_device": "cuda",
+      "subprocess_seconds": 43.01
+    },
+    {
+      "case": "case-12s-warm",
+      "duration_seconds": 12.0,
+      "wall_seconds": 15.397,
+      "stages": {
+        "converting": 0.23,
+        "demucs": 4.94,
+        "drumsep": 8.161,
+        "transcribing": 0.8,
+        "rhythm": 1.208,
+        "engraving": 0.056
+      },
+      "torch": "2.8.0+cu128",
+      "cuda": "12.8",
+      "gpu": "Tesla T4",
+      "peak_vram_bytes": 1679609856,
+      "events": 55,
+      "pages": 1,
+      "separation_device": "cuda",
+      "transcription_device": "cuda",
+      "subprocess_seconds": 17.914
+    },
+    {
+      "case": "case-full",
+      "duration_seconds": 275.11,
+      "wall_seconds": 103.758,
+      "stages": {
+        "converting": 2.501,
+        "demucs": 20.78,
+        "drumsep": 65.625,
+        "transcribing": 10.628,
+        "rhythm": 3.653,
+        "engraving": 0.563
+      },
+      "torch": "2.8.0+cu128",
+      "cuda": "12.8",
+      "gpu": "Tesla T4",
+      "peak_vram_bytes": 1679609856,
+      "events": 1598,
+      "pages": 3,
+      "separation_device": "cuda",
+      "transcription_device": "cuda",
+      "subprocess_seconds": 106.323
+    }
+  ],
+  "fresh_full_song_through_docker": {
+    "gpu_requested": "T4",
+    "source_revision": "8d5f96b776276cbd0f8d3dc90b313a5aa51e7f12",
+    "docker_image": "beatit-colab-cli:probe",
+    "google_account_credentials_in_container": false,
+    "phase_seconds": {
+      "allocate": 3.812,
+      "upload_source": 2.152,
+      "upload_input": 2.685,
+      "bootstrap": 99.782,
+      "upload_runner": 1.167,
+      "pipeline": 136.888,
+      "download": 1.57,
+      "release": 1.824
+    },
+    "end_to_end_seconds": 248.064,
+    "pipeline": {
+      "duration_seconds": 275.11,
+      "wall_seconds": 131.051,
+      "stages": {
+        "converting": 3.793,
+        "demucs": 21.456,
+        "drumsep": 86.273,
+        "transcribing": 14.027,
+        "rhythm": 4.569,
+        "engraving": 0.925
+      },
+      "torch": "2.8.0+cu128",
+      "cuda": "12.8",
+      "gpu": "Tesla T4",
+      "peak_vram_bytes": 1679609856,
+      "events": 1585,
+      "pages": 3,
+      "separation_device": "cuda",
+      "transcription_device": "cuda"
+    },
+    "bootstrap": {
+      "source_unpack": 0.009,
+      "dependency_install": 72.08,
+      "model_download": 22.393,
+      "doctor": 2.288,
+      "bootstrap_total": 96.778
+    },
+    "artifacts_verified": true,
+    "total_including_release_seconds": 249.921,
+    "session_released": true,
+    "runtime_credentials_removed": true
+  },
+  "docker_runtime_token_only_probe": {
+    "success": true,
+    "account_oauth_credentials_mounted": false,
+    "architecture": "arm64",
+    "cli_version": "0.7.4"
+  },
+  "all_test_sessions_released": true,
+  "accuracy_evaluation": false
+}
