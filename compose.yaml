@@ -1,0 +1,31 @@
+name: beatit
+
+services:
+  beatit:
+    build: .
+    image: ${BEATIT_IMAGE:-beatit:local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "${BEATIT_BIND_ADDRESS:-127.0.0.1}:${BEATIT_PORT:-18000}:8000"
+    environment:
+      ALLOWED_HOSTS: ${BEATIT_ALLOWED_HOSTS:-localhost}
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      NUMBA_NUM_THREADS: "2"
+    volumes:
+      - data:/app/data
+      - model-cache:/home/beatit/.cache
+    cpus: 2.0
+    mem_limit: 12g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:
+  model-cache:

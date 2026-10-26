@@ -113,6 +113,7 @@ use isolated API fixtures; they do not modify existing sessions or download mode
 See [workspace design and verification](docs/studio-workspace.md).
 
 See [detailed usage and Docker setup](docs/usage.md),
+[persistent server deployment](docs/usage.md#서버에-계속-실행하기),
 [architecture and upstream license notes](docs/architecture.md), and the
 [first](docs/experiment.md) / [second](docs/experiment-02.md) /
 [third](docs/experiment-03.md) experiment reports.

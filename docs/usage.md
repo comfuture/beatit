@@ -60,17 +60,58 @@ Linux 호스트를 원격으로 사용한다면 SSH 포워딩으로 접속할 �
 ```sh
 docker build -t drum-score:local .
 docker run --rm -p 127.0.0.1:8000:8000 \
-  -v "$PWD/data:/app/data" \
-  -v "$PWD/work/model-cache:/root/.cache/huggingface" \
-  -v "$PWD/work/torch-cache:/root/.cache/torch" \
+  -v beatit-data:/app/data \
+  -v beatit-model-cache:/home/beatit/.cache \
   drum-score:local
 ```
 
+컨테이너는 UID 10001의 일반 사용자로 실행합니다. 기존 호스트 디렉토리를 bind mount한다면
+이 사용자가 쓸 수 있도록 소유권을 맞춰야 합니다. 위의 named volume은 처음 생성할 때
+이미지의 디렉토리 소유권을 이어받습니다.
+
 Demucs와 DrumSep 가중치는 Hugging Face 캐시에, Beat This! 가중치는 PyTorch hub 캐시에
-저장됩니다. 두 볼륨을 유지하면 컨테이너를 다시 실행해도 모델을 새로 받지 않습니다.
+저장됩니다. `/home/beatit/.cache` 볼륨을 유지하면 컨테이너를 다시 실행해도 모델을 새로 받지 않습니다.
 
 기본 컨테이너는 CPU용이며 Verovio로 SVG를 생성합니다. Apple Silicon에서 실행하는 Docker도
 Linux CPU를 사용합니다. MPS를 쓰려면 macOS에서 직접 실행하세요.
+
+### 서버에 계속 실행하기
+
+```sh
+cp deploy.env.example .env
+docker compose build
+docker compose run --rm --no-deps beatit drum-score doctor
+docker compose run --rm --no-deps beatit drum-score download-model
+docker compose up -d --wait
+```
+
+기본 접속 주소는 `http://127.0.0.1:18000`입니다. 원격 서버라면
+`ssh -N -L 8000:127.0.0.1:18000 user@host` 후 `http://127.0.0.1:8000`에 접속하세요.
+Tailscale 내부에서 직접 접속하려면 `.env`의 `BEATIT_BIND_ADDRESS`를 서버의 Tailscale IPv4로,
+`BEATIT_ALLOWED_HOSTS`를 해당 IP와 MagicDNS 이름의 쉼표 구분 목록으로 설정하세요.
+이 경우 접속 주소는 `http://<Tailscale IP 또는 이름>:18000`이며,
+SSH 포워딩의 목적지도 `127.0.0.1` 대신 해당 Tailscale IP로 바꿉니다.
+로그인 기능이 없으므로 공인 인터페이스에 직접 공개하지 마세요.
+
+Compose는 한 개의 서버 프로세스를 실행하고 재부팅 후 자동으로 다시 시작합니다.
+기본 상한은 CPU 2코어·메모리 12 GiB이며, 필요하면 `compose.yaml`에서 조정하세요.
+ARM64의 오디오 의존성은 Rust가 있는 빌드 단계에서 컴파일하고, 실행 이미지에는 도구 체인을
+포함하지 않습니다. 상태 확인과 로그는 다음 명령을 사용합니다.
+
+```sh
+docker compose ps
+docker compose logs --tail 100 beatit
+docker compose exec beatit drum-score doctor
+docker compose stop
+docker compose start
+```
+
+데이터와 모델 캐시는 각각 `beatit_data`, `beatit_model-cache` 볼륨에 보관합니다.
+업데이트는 소스를 갱신하고 `docker compose build && docker compose up -d --wait`로 적용합니다.
+실행 중인 분석이 있다면 완료 후 업데이트하세요. 중단된 분석은 실패로 기록되어 재시도할 수 있습니다.
+롤백할 이미지를 보관하려면 업데이트 전에 `docker tag beatit:local beatit:previous`를 실행하고,
+복원할 때 `BEATIT_IMAGE=beatit:previous docker compose up -d --no-build --wait`를 사용하세요.
+`docker compose down`은 볼륨을 남기지만 `docker compose down -v`는 데이터와 모델 캐시도 삭제합니다.
 
 ## 처리 흐름
 
@@ -156,6 +197,7 @@ MuseScore 4.7.5의 일부 macOS 실행은 변환을 마친 뒤 종료 오류를 
 | `MAX_UPLOAD_BYTES` | 1 GiB |
 | `MAX_DURATION_SECONDS` | 1800 (30분) |
 | `ALLOWED_HOSTS` | localhost 외 Host 헤더 허용 목록, 쉼표 구분 |
+| `OMP_NUM_THREADS` | 분석 worker의 OpenMP 스레드 수; 미지정 시 4, Compose는 2 |
 
 ## 검증
 
