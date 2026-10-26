@@ -1,0 +1,49 @@
+services:
+  beatit:
+    environment:
+      DRUM_EXECUTION_BACKEND: ${BEATIT_EXECUTION_BACKEND:-colab}
+      COLAB_CONTROLLER_URL: http://colab-controller:8001
+      COLAB_CONTROLLER_TOKEN_FILE: /run/secrets/colab_controller_token
+      MAX_UPLOAD_BYTES: "125829120"
+    secrets:
+      - colab_controller_token
+    depends_on:
+      colab-controller:
+        condition: service_healthy
+
+  colab-controller:
+    build:
+      context: .
+      target: colab-controller
+    image: ${BEATIT_CONTROLLER_IMAGE:-beatit-colab-controller:local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      DRUM_DATA_DIR: /app/data
+      COLAB_STATE_DIR: /app/colab-state
+      COLAB_SOURCE_ARCHIVE: /app/beatit-source.tar
+      COLAB_CONTROLLER_TOKEN_FILE: /run/secrets/colab_controller_token
+      COLAB_SESSION_NAME: beatit-chunsik
+      COLAB_IDLE_SECONDS: ${BEATIT_COLAB_IDLE_SECONDS:-600}
+    ports:
+      - "127.0.0.1:${BEATIT_COLAB_PORT:-18001}:8001"
+    secrets:
+      - colab_controller_token
+    volumes:
+      - data:/app/data
+      - colab-state:/app/colab-state
+    cpus: 1.0
+    mem_limit: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  colab-state:
+
+secrets:
+  colab_controller_token:
+    file: ${BEATIT_COLAB_API_TOKEN_FILE:?Set a protected controller API token file}

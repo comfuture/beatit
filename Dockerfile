@@ -24,7 +24,36 @@ COPY --from=frontend /web/.output/public ./src/transcription/static/web
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --extra cpu --no-dev --no-editable
 
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm AS colab-source
+WORKDIR /bundle
+COPY pyproject.toml uv.lock README.md .python-version ./
+COPY src ./src
+COPY scripts/build_colab_source.py /build_colab_source.py
+RUN python /build_colab_source.py --root /bundle --output /beatit-source.tar
+
+FROM python:3.12-slim-bookworm AS controller-builder
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /bin/uv
+WORKDIR /app
+COPY pyproject.toml uv.lock README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --only-group controller --no-install-project --python 3.12
+
+FROM python:3.12-slim-bookworm AS colab-controller
+RUN useradd --create-home --uid 10001 beatit \
+    && mkdir -p /app/data /app/colab-state \
+    && chown -R beatit:beatit /app/data /app/colab-state
+WORKDIR /app
+COPY --from=controller-builder /app/.venv /app/.venv
+COPY --from=colab-source /beatit-source.tar /app/beatit-source.tar
+COPY src ./src
+ENV PATH="/app/.venv/bin:$PATH" PYTHONPATH=/app/src PYTHONUNBUFFERED=1 \
+    HOME=/app/colab-state/home
+USER beatit
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).read()"
+CMD ["python", "-m", "transcription.colab_controller"]
+
+FROM python:3.12-slim-bookworm AS web
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libgomp1 libopus0 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 beatit \
