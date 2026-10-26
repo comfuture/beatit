@@ -2,7 +2,8 @@
 
 Colab T4는 초기 준비 비용을 포함해도 이 파이프라인을 가속할 수 있다.
 로컬 Mac과 ARM64 Docker에서 공식 Colab CLI로 실제 변환과 결과 회수를 검증했다.
-현재 chunsik 웹 앱의 작업 큐에 자동 연결한 상태는 아니며, 기존 CPU 서비스는 유지된다.
+벤치마크 이후 수동 연결 백엔드 구현은 [이슈 #8](https://github.com/comfuture/beatit/issues/8)과
+[배포/운영 문서](colab-deployment.md)에 이어진다. 아래 수치는 구현 전의 가능성 검토 기록이다.
 
 ## 실측
 
