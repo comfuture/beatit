@@ -233,7 +233,7 @@ class JobStore:
                                 env={
                                     **os.environ,
                                     "PYTORCH_ENABLE_MPS_FALLBACK": "1",
-                                    "OMP_NUM_THREADS": "4",
+                                    "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "4"),
                                 },
                             )
                     except OSError as error:
