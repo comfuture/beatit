@@ -8,6 +8,7 @@ import {
 } from "~/types/studio";
 import { validateOptions } from "~/utils/rhythm";
 import { mergeBeatReview, reviewAfterEdit } from "~/utils/beatReview";
+import { colabConnectionUnavailable } from "~/utils/execution";
 
 export function useStudio() {
   const jobs = ref<Job[]>([]);
@@ -79,6 +80,7 @@ export function useStudio() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let selection = 0;
+  let systemRefreshedAt = 0;
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(path, init);
@@ -103,6 +105,14 @@ export function useStudio() {
   }
   async function refreshHistory() {
     jobs.value = await api<Job[]>("/api/jobs");
+  }
+  async function refreshSystem() {
+    const available = await api<SystemInfo>("/api/system", {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (disposed) return;
+    system.value = available;
+    systemRefreshedAt = Date.now();
   }
   async function showJob(job: Job, token: number) {
     if (token !== selection || disposed) return;
@@ -140,7 +150,8 @@ export function useStudio() {
     const token = selection;
     const id = activeId.value;
     try {
-      if (!system.value) system.value = await api<SystemInfo>("/api/system");
+      if (!system.value || Date.now() - systemRefreshedAt >= 10000)
+        await refreshSystem();
       await refreshHistory();
       if (
         id &&
@@ -216,6 +227,10 @@ export function useStudio() {
   }
   async function upload() {
     if (!selectedFile.value || busy.value || !system.value?.ffmpeg) return;
+    if (colabConnectionUnavailable(system.value)) {
+      error.value = "Colab 연결 대기 중입니다. 연결 후 분석을 시작하세요.";
+      return;
+    }
     try {
       validateOptions(options.value);
     } catch (e) {
@@ -407,13 +422,13 @@ export function useStudio() {
   onMounted(async () => {
     window.addEventListener("beforeunload", beforeUnload);
     try {
-      system.value = await api<SystemInfo>("/api/system");
+      await refreshSystem();
       online.value = true;
       await refreshHistory();
       const saved = localStorage.getItem("beatit-session");
       if (saved && jobs.value.some((j) => j.id === saved))
         await selectJob(saved);
-      if (!system.value.ffmpeg)
+      if (system.value && !system.value.ffmpeg)
         error.value =
           "FFmpeg/ffprobe가 없습니다. README의 설치 안내를 확인하세요.";
     } catch (e) {

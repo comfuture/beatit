@@ -634,6 +634,11 @@ a:focus-visible,
 .source-notes .iconify {
   flex-shrink: 0;
 }
+.source-notes > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
 .workflow-overview {
   display: flex;
   justify-content: space-between;

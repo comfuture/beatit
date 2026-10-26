@@ -2,6 +2,7 @@
 import type { SplitterItem } from "@nuxt/ui";
 import { kit, statusLabels } from "~/types/studio";
 import { formatTime } from "~/utils/rhythm";
+import { isColabExecution, runtimeStatus } from "~/utils/execution";
 
 const studio = useStudio();
 const {
@@ -28,6 +29,13 @@ const {
   undoStack,
   redoStack,
 } = studio;
+const colabExecution = computed(() => isColabExecution(system.value));
+const runtimeDescription = computed(() => runtimeStatus(system.value));
+const runtimeConnected = computed(() => {
+  if (!colabExecution.value) return true;
+  const runtime = system.value?.remote_runtime;
+  return !!runtime?.prepared && ["ready", "running", "idle"].includes(runtime.state);
+});
 const sidebarOpen = ref(true);
 const inspectorOpen = ref(false);
 const search = ref("");
@@ -234,7 +242,7 @@ onBeforeUnmount(() => {
             <span class="brand-mark"><UIcon name="i-lucide-audio-lines" /></span
             ><template v-if="state === 'expanded'"
               ><strong>beatit<span>STUDIO</span></strong
-              ><span class="brand-version">LOCAL</span></template
+              ><span class="brand-version">{{ colabExecution ? "COLAB" : "LOCAL" }}</span></template
             >
           </div></template
         >
@@ -309,7 +317,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <div class="sidebar-guide">
-              <span class="eyebrow">YOUR LOCAL WORKSPACE</span>
+              <span class="eyebrow">{{ colabExecution ? "YOUR DRUM WORKSPACE" : "YOUR LOCAL WORKSPACE" }}</span>
               <p>소리에서 리듬으로.<br />검토하고, 다듬고, 연주하세요.</p>
               <span class="sidebar-guide-line" />
             </div>
@@ -317,10 +325,17 @@ onBeforeUnmount(() => {
         </template>
         <template #footer="{ state }"
           ><div class="sidebar-footer">
-            <span class="engine-indicator" :class="{ online }" />
+            <span
+              class="engine-indicator"
+              :class="{ online: online && runtimeConnected }"
+            />
             <div v-if="state === 'expanded'">
               <strong>{{
-                online ? "로컬 엔진 연결됨" : "엔진 연결 확인"
+                online
+                  ? colabExecution
+                    ? system?.execution_label || "Google Colab GPU"
+                    : "로컬 엔진 연결됨"
+                  : "엔진 연결 확인"
               }}</strong
               ><small
                 >{{ system?.default_device.toUpperCase() || "—" }} ·
@@ -332,6 +347,7 @@ onBeforeUnmount(() => {
                       : "렌더러 확인"
                 }}</small
               >
+              <small v-if="colabExecution" role="status">{{ runtimeDescription }}</small>
             </div>
             <UTooltip text="워크스페이스 도움말"
               ><UButton
@@ -556,6 +572,7 @@ onBeforeUnmount(() => {
                   <p class="processing-filename">{{ current.filename }}</p>
                   <ProcessPanel
                     :job="current"
+                    :colab="colabExecution"
                     :disabled="mutating"
                     @cancel="studio.action('cancel')"
                     @retry="studio.action('retry')"
@@ -692,6 +709,7 @@ onBeforeUnmount(() => {
                   <ProcessPanel
                     v-else-if="!current"
                     :job="null"
+                    :colab="colabExecution"
                     compact
                     :uploading="uploading"
                     :upload-progress="uploadProgress"
@@ -782,6 +800,7 @@ onBeforeUnmount(() => {
         ><ProcessPanel
           v-else
           :job="current"
+          :colab="colabExecution"
           :uploading="uploading"
           :upload-progress="uploadProgress"
           :disabled="mutating"

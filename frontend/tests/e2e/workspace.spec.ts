@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { BeatReview, DrumEvent, ScoreMetadata } from "../../app/types/studio";
+import type { BeatReview, DrumEvent, ScoreMetadata, SystemInfo } from "../../app/types/studio";
 const id = "a".repeat(32);
 const settings = {
   bpm: 120,
@@ -52,7 +52,7 @@ function sampleJob() {
     },
   };
 }
-async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, events = initialEvents as DrumEvent[], audioTone = false } = {}) {
+async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, events = initialEvents as DrumEvent[], audioTone = false, colab = false } = {}) {
   let job = sampleJob();
   job.result.grid.offset = offset;
   job.result.options.offset = offset;
@@ -63,16 +63,25 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
   let pendingHeading: ScoreMetadata | null = null;
   let rejectHeading = false;
   let jobEvents = structuredClone(events);
+  let systemRequests = 0;
+  const runtime: NonNullable<SystemInfo["remote_runtime"]> = {
+    state: "ready", accelerator: "T4", prepared: true, idle_timeout_seconds: 600,
+  };
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     const method = route.request().method();
-    if (path === "/api/system")
+    if (path === "/api/system") {
+      systemRequests++;
       return route.fulfill({
         json: {
-          devices: ["cpu"],
-          default_device: "cpu",
+          devices: colab ? ["cuda"] : ["cpu"],
+          default_device: colab ? "cuda" : "cpu",
+          ...(colab ? {
+            execution_backend: "colab", execution_label: "Google Colab GPU",
+            remote_runtime: { ...runtime },
+          } : {}),
           ffmpeg: true,
           verovio: true,
           musescore: false,
@@ -80,6 +89,7 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
           max_duration_seconds: 1800,
         },
       });
+    }
     if (path === "/api/jobs" && method === "GET")
       return route.fulfill({ json: history ? [job] : [] });
     if (path === "/api/jobs" && method === "POST") {
@@ -88,9 +98,9 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       );
       job.status = "running";
       job.progress = {
-        stage: "separating",
-        progress: 0.42,
-        message: "드럼 분리 중",
+        stage: colab ? "preparing" : "separating",
+        progress: colab ? 0.03 : 0.42,
+        message: colab ? "Colab 실행 환경 준비 중" : "드럼 분리 중",
       };
       (job as any).result = undefined;
       return route.fulfill({ status: 202, json: job });
@@ -207,6 +217,16 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
     getSaved: () => saved,
     getHeading: () => heading,
     rejectHeading: (value: boolean) => { rejectHeading = value; },
+    systemRequests: () => systemRequests,
+    runtime: (state: typeof runtime.state, prepared = false) => {
+      runtime.state = state;
+      runtime.prepared = prepared;
+    },
+    progress: (stage: string, message: string, progress: number) => {
+      job.status = "running";
+      job.progress = { stage, progress, message };
+      (job as any).result = undefined;
+    },
     fail: () => {
       job.status = "failed";
       (job as any).error = "모델 실행 실패";
@@ -219,6 +239,41 @@ async function openSession(page: Page) {
     page.getByRole("region", { name: "드럼 비트 편집기" }),
   ).toBeVisible();
 }
+
+test("Colab execution shows processing location, refreshed readiness and remote progress", async ({ page }) => {
+  const state = await setup(page, { colab: true });
+  await expect(page.locator(".brand-version")).toHaveText("COLAB");
+  await expect(page.locator(".sidebar-footer strong")).toHaveText("Google Colab GPU");
+  await expect(page.locator(".source-notes")).toContainText("업로드한 오디오는 Google Colab GPU에서 분석합니다");
+  await expect(page.locator(".source-panel").getByRole("status")).toHaveText("준비된 GPU 재사용 가능");
+  expect(state.systemRequests()).toBe(1);
+  state.runtime("unavailable");
+  await expect(page.locator(".source-panel").getByRole("status")).toHaveText("Colab 연결 대기", { timeout: 15000 });
+  expect(state.systemRequests()).toBe(2);
+  await expect(page.locator(".sidebar-footer .engine-indicator")).not.toHaveClass(/online/);
+
+  await page.getByLabel("소스 파일 선택").setInputFiles({
+    name: "input.wav", mimeType: "audio/wav", buffer: Buffer.from("test audio"),
+  });
+  await expect(page.getByRole("button", { name: "분석 시작", exact: true })).toBeDisabled();
+  state.runtime("ready", true);
+  await page.reload();
+  await expect(page.locator(".source-panel").getByRole("status")).toHaveText("준비된 GPU 재사용 가능");
+  await page.getByLabel("소스 파일 선택").setInputFiles({
+    name: "input.wav", mimeType: "audio/wav", buffer: Buffer.from("test audio"),
+  });
+  await expect(page.getByRole("button", { name: "분석 시작", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "분석 시작", exact: true }).click();
+  const processing = page.locator(".processing-workspace");
+  await expect(processing.locator(".process-stage.active strong")).toHaveText("Colab GPU 준비");
+  await expect(processing).toContainText("Colab 실행 환경 준비 중");
+  state.progress("downloading", "분석 결과를 받는 중", 0.97);
+  await expect(processing.locator(".process-stage.active strong")).toHaveText("악보 생성");
+  await expect(processing).toContainText("분석 결과를 받는 중");
+  await page.getByRole("button", { name: "취소", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "분석이 취소되었습니다" })).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
 
 test("apply score headings refreshes the preview and exports while preserving beat drafts", async ({ page }) => {
   const state = await setup(page);
