@@ -94,7 +94,9 @@ function numberValue(value: string | number): number | null {
                 :items="[
                   { label: '자동 선택', value: 'auto' },
                   ...(system?.devices || ['cpu']).map((d) => ({
-                    label: d.toUpperCase(),
+                    label: system?.execution_backend === 'colab' && d === 'cuda'
+                      ? 'Colab GPU · CUDA'
+                      : d.toUpperCase(),
                     value: d,
                   })),
                 ]"

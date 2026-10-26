@@ -7,14 +7,18 @@ const props = defineProps<{
   uploadProgress?: number;
   compact?: boolean;
   disabled?: boolean;
+  colab?: boolean;
 }>();
 defineEmits<{ cancel: []; retry: [] }>();
-const stages = [
+const preparingRemote = computed(() =>
+  ["allocating", "preparing", "uploading"].includes(props.job?.progress.stage || ""),
+);
+const stages = computed(() => [
   {
-    label: "오디오 준비",
-    detail: "원본에서 오디오 추출",
+    label: preparingRemote.value ? "Colab GPU 준비" : "오디오 준비",
+    detail: preparingRemote.value ? "GPU 연결 · 실행 환경 및 오디오 준비" : "원본에서 오디오 추출",
     icon: "i-lucide-file-audio",
-    stages: ["converting"],
+    stages: ["allocating", "preparing", "uploading", "converting"],
   },
   {
     label: "드럼 분리",
@@ -32,13 +36,13 @@ const stages = [
     label: "악보 생성",
     detail: "리듬 격자 적용 및 조판",
     icon: "i-lucide-file-music",
-    stages: ["engraving"],
+    stages: ["engraving", "downloading", "publishing"],
   },
-];
+]);
 const index = computed(() =>
   props.job?.status === "completed"
-    ? 4
-    : stages.findIndex((s) =>
+    ? stages.value.length
+    : stages.value.findIndex((s) =>
         s.stages.includes(props.job?.progress.stage || ""),
       ),
 );
@@ -119,7 +123,7 @@ const percent = computed(() =>
       <small>{{
         job?.progress.elapsed_seconds
           ? `${Math.round(job.progress.elapsed_seconds)}초 경과`
-          : "첫 실행 시 모델을 다운로드합니다"
+          : colab ? "Colab GPU 연결 후 분석합니다" : "첫 실행 시 모델을 다운로드합니다"
       }}</small>
       <UButton
         v-if="active"

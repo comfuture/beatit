@@ -85,6 +85,22 @@ export interface Job {
   request?: { options: Options };
 }
 export interface SystemInfo {
+  execution_backend?: "local" | "colab";
+  execution_label?: string;
+  remote_runtime?: {
+    state:
+      | "idle"
+      | "allocating"
+      | "preparing"
+      | "ready"
+      | "running"
+      | "releasing"
+      | "unavailable"
+      | "error";
+    accelerator: string;
+    prepared: boolean;
+    idle_timeout_seconds: number;
+  };
   devices: string[];
   default_device: string;
   ffmpeg: boolean;
