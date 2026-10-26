@@ -82,3 +82,20 @@ title is `배포 검증 · Wake 12초`. No existing Mac sessions were migrated.
 Multi-user authentication, owner isolation, and replacing SQLite/JSON project
 persistence are tracked in [issue #7](https://github.com/comfuture/beatit/issues/7).
 The current service remains a shared single-user workspace.
+
+### CPU performance probe
+
+Under the same 2-CPU container limit, one real DrumSep forward pass over the same
+11.877-second chunk took 45.419 seconds with 4 PyTorch threads and 45.543 seconds
+with 2 threads. The two output tensors had a maximum absolute difference of zero.
+This was one pass per configuration, not a statistical performance comparison;
+there was no observed speed improvement from reducing threads. The pipeline now
+respects the configured thread limit instead of unconditionally selecting four.
+
+The separator advances by 2.969 seconds per chunk (overlap 4), including its current
+edge padding. Its code schedules 5 chunks for 12 seconds, 87 for 4 minutes, and 108
+for 5 minutes. At the measured per-chunk time, DrumSep alone would take roughly
+66–82 minutes for a 4–5 minute song; Demucs and other stages add time. These are
+code-derived estimates, not full-song measurements. Practical interactive use
+needs a separate performance decision, such as GPU inference or a lighter mode
+whose transcription quality is evaluated against the current pipeline.
