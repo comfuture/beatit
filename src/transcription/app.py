@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .colab_worker import execution_capabilities
 from .models import Options, Revision, ScoreMetadata
 from .pipeline import MAX_DURATION, save_json
 from .runtime import capabilities
@@ -36,6 +37,16 @@ EXTENSIONS = {
     ".m4v",
 }
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(1024**3)))
+
+
+def upload_limit():
+    return (
+        min(MAX_UPLOAD, 120 * 1024**2)
+        if os.environ.get("DRUM_EXECUTION_BACKEND") == "colab"
+        else MAX_UPLOAD
+    )
+
+
 JOB_AUDIO = {"audio.wav", "drums.wav"} | {
     f"stem-{name}.flac" for name in ("kick", "snare", "toms", "hh", "cymbals")
 }
@@ -86,8 +97,8 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
     @app.get("/api/system")
     def system():
         return {
-            **capabilities(),
-            "max_upload_bytes": MAX_UPLOAD,
+            **execution_capabilities(capabilities()),
+            "max_upload_bytes": upload_limit(),
             "max_duration_seconds": MAX_DURATION,
         }
 
@@ -112,6 +123,11 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
                     for item in error.errors()
                 ],
             ) from None
+        if os.environ.get("DRUM_EXECUTION_BACKEND") == "colab" and parsed.device not in {
+            "auto",
+            "cuda",
+        }:
+            raise HTTPException(422, "Colab 분석은 자동 선택 또는 CUDA 장치를 사용하세요.")
         identifier = uuid4().hex
         directory = store.directory(identifier)
         directory.mkdir()
@@ -120,7 +136,7 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
             with (directory / "input").open("wb") as destination:
                 while chunk := await file.read(1024**2):
                     size += len(chunk)
-                    if size > MAX_UPLOAD:
+                    if size > upload_limit():
                         raise HTTPException(413, "파일 크기 제한을 초과했습니다.")
                     destination.write(chunk)
             if size == 0:
