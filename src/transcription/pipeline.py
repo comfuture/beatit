@@ -180,7 +180,7 @@ def transcribe(
     if rate != drumsep.SAMPLE_RATE:
         raise RuntimeError(f"드럼 오디오는 {drumsep.SAMPLE_RATE} Hz여야 합니다.")
     audio = audio.T
-    torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
+    torch.set_num_threads(max(1, min(torch.get_num_threads(), 4, os.cpu_count() or 1)))
     torch.manual_seed(0)
     labels = {
         "kit": "전체 드럼",
