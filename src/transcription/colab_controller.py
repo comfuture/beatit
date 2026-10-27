@@ -10,6 +10,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -31,6 +32,21 @@ class Attachment(BaseModel):
     lease_seconds: int = Field(default=90, ge=30, le=120)
 
 
+class ManagerUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    phase: Literal["idle", "allocating", "releasing", "error"] = "idle"
+    error: Literal["authentication", "allocation", "connection", "cleanup"] | None = None
+    lease_seconds: int = Field(default=90, ge=30, le=120)
+
+
+MANAGER_ERRORS = {
+    "authentication": "서버 Colab 인증을 다시 진행해야 합니다.",
+    "allocation": "Colab 런타임을 할당하지 못했습니다. 계정 한도와 가용성을 확인하세요.",
+    "connection": "서버 Colab 관리자 연결을 확인하세요.",
+    "cleanup": "이전 Colab 런타임 정리가 필요합니다.",
+}
+
+
 class Controller:
     def __init__(self, data: Path, state: Path, source: Path, *, transport=None, idle_seconds=600):
         self.data = data.resolve()
@@ -47,6 +63,10 @@ class Controller:
         self.stopping = threading.Event()
         self.cancelled = threading.Event()
         self.lease_until = 0.0
+        self.managed = os.environ.get("COLAB_ALLOCATION_MODE", "operator") == "server"
+        self.manager_until = 0.0
+        self.manager_phase = "idle"
+        self.manager_error = None
         self.last_activity = time.time()
         self.runtime_id = None
         self.accelerator = "T4"
@@ -54,6 +74,7 @@ class Controller:
         self.confirmed_released = set()
         self.phase = "unavailable"
         self.active = None
+        self.awaiting_runtime = False
         self.job_thread = None
         self.monitor = None
         self.database = self.state / "controller.sqlite3"
@@ -63,7 +84,8 @@ class Controller:
                 status TEXT NOT NULL, error TEXT, runtime TEXT, updated REAL NOT NULL
             )""")
             self.orphans = connection.execute(
-                "SELECT job, attempt, runtime FROM attempts WHERE status IN ('running', 'orphaned')"
+                "SELECT job, attempt, runtime FROM attempts "
+                "WHERE status IN ('running', 'orphaned') AND runtime IS NOT NULL"
             ).fetchall()
             connection.execute(
                 "UPDATE attempts SET status='failed', error=?, updated=? WHERE status='running'",
@@ -92,7 +114,7 @@ class Controller:
     def _watch(self):
         while not self.stopping.wait(2):
             with self.lock:
-                if self.active and not self.attached():
+                if self.active and not self.awaiting_runtime and not self.attached():
                     self.cancelled.set()
             if self.orphans and self.attached() and self.execution_lock.acquire(blocking=False):
                 try:
@@ -106,11 +128,28 @@ class Controller:
     def attached(self):
         return self.runtime_id is not None and time.time() < self.lease_until
 
+    def manager_update(self, update: ManagerUpdate):
+        if not self.managed:
+            raise ValueError("Server allocation is disabled")
+        with self.lock:
+            self.manager_until = time.time() + update.lease_seconds
+            self.manager_phase = update.phase
+            self.manager_error = update.error
+        return self.status()
+
+    def can_allocate(self):
+        return (
+            self.managed
+            and time.time() < self.manager_until
+            and self.manager_error is None
+            and self.manager_phase != "releasing"
+        )
+
     def attach(self, sessions: dict, lease_seconds: int):
         session = validate_session(sessions, self.session_name)
         identifier = hashlib.sha256(session["endpoint"].encode()).hexdigest()[:16]
         with self.lock:
-            if self.active and identifier != self.runtime_id:
+            if self.active and not self.awaiting_runtime and identifier != self.runtime_id:
                 raise ValueError("Cancel the active job before replacing the runtime")
             if self.orphans and any(row[2] != identifier for row in self.orphans):
                 raise ValueError("Confirm release of the previous runtime before replacing it")
@@ -152,8 +191,13 @@ class Controller:
     def status(self):
         with self.lock:
             attached = self.attached()
+            state = self.phase if attached else "unavailable"
+            if self.managed and not attached and time.time() < self.manager_until:
+                state = "error" if self.manager_error else self.manager_phase
+                if self.active and not self.cancelled.is_set() and not self.manager_error:
+                    state = "allocating"
             return {
-                "state": self.phase if attached else "unavailable",
+                "state": state,
                 "accelerator": self.accelerator,
                 "prepared": attached
                 and not self.orphans
@@ -164,7 +208,13 @@ class Controller:
                 and self.active is None
                 and time.time() - self.last_activity >= self.idle_seconds,
                 "runtime_id": self.runtime_id if attached else None,
-                "allocation_mode": "operator",
+                "allocation_mode": "server" if self.managed else "operator",
+                "can_allocate": self.can_allocate(),
+                "allocation_requested": self.managed
+                and self.active is not None
+                and not self.cancelled.is_set()
+                and not attached,
+                "manager_error": MANAGER_ERRORS.get(self.manager_error),
                 "cleanup_pending": bool(self.orphans),
             }
 
@@ -203,16 +253,26 @@ class Controller:
                 if existing["job"] != job or existing["request_hash"] != fingerprint:
                     raise ValueError("Attempt identifier already used for another request")
                 return self.attempt(job, attempt)
-            if not self.attached():
-                raise ColabUnavailable("Colab 연결 대기: 로컬 운영자 CLI에서 런타임을 연결하세요.")
+            if (self.managed or not self.attached()) and not self.can_allocate():
+                raise ColabUnavailable(
+                    MANAGER_ERRORS.get(self.manager_error)
+                    or "Colab 연결 대기: 런타임 관리자 연결을 확인하세요."
+                )
             if self.active:
                 raise ValueError("Another Colab job is active")
             connection.execute(
                 "INSERT INTO attempts VALUES (?, ?, ?, 'running', NULL, ?, ?)",
-                (attempt, job, fingerprint, self.runtime_id, time.time()),
+                (
+                    attempt,
+                    job,
+                    fingerprint,
+                    self.runtime_id if self.attached() else None,
+                    time.time(),
+                ),
             )
             connection.commit()
             self.active = (job, attempt)
+            self.awaiting_runtime = not self.attached()
             self.cancelled.clear()
             self.last_activity = time.time()
             self.job_thread = threading.Thread(
@@ -337,10 +397,44 @@ class Controller:
         started = time.monotonic()
         launched = False
         uncertain = False
-        runtime = self.runtime_id
+        runtime = None
         final, error = "failed", None
         with self.execution_lock:
             try:
+                if self.cancelled.is_set() or self.stopping.is_set():
+                    raise InterruptedError("Colab 작업이 취소되었습니다.")
+                if self.managed and not self.can_allocate():
+                    raise ColabUnavailable(
+                        MANAGER_ERRORS.get(self.manager_error)
+                        or "서버 Colab 관리자 연결을 확인하세요."
+                    )
+                if not self.attached():
+                    self._progress(
+                        directory, "allocating", 0.01, "Colab GPU를 할당합니다.", started
+                    )
+                    deadline = time.monotonic() + 210
+                    while not self.attached():
+                        if self.cancelled.is_set() or self.stopping.is_set():
+                            raise InterruptedError("Colab GPU 할당 대기가 취소되었습니다.")
+                        if not self.can_allocate() or time.monotonic() >= deadline:
+                            raise ColabUnavailable(
+                                MANAGER_ERRORS.get(self.manager_error)
+                                or "Colab GPU 할당 대기 시간이 초과되었습니다."
+                            )
+                        self.cancelled.wait(0.2)
+                if self.cancelled.is_set() or self.stopping.is_set():
+                    raise InterruptedError("Colab 작업이 취소되었습니다.")
+                if self.managed and not self.can_allocate():
+                    raise ColabUnavailable(
+                        MANAGER_ERRORS.get(self.manager_error)
+                        or "서버 Colab 관리자 연결을 확인하세요."
+                    )
+                runtime = self.runtime_id
+                self.awaiting_runtime = False
+                with self.connect() as connection:
+                    connection.execute(
+                        "UPDATE attempts SET runtime=? WHERE attempt=?", (runtime, attempt)
+                    )
                 with tempfile.TemporaryDirectory(dir=self.state) as scratch:
                     packed = Path(scratch) / "input.zip"
                     pack_input(directory, packed)
@@ -436,7 +530,7 @@ class Controller:
                     except Exception:
                         error = "Colab 연결이 끊겼습니다. 운영자 CLI에서 런타임을 해제하세요."
                         uncertain = runtime not in self.confirmed_released
-                if not uncertain:
+                if not uncertain and runtime is not None:
                     if launched:
                         self._collect_log(remote, directory)
                     try:
@@ -457,6 +551,7 @@ class Controller:
                         (final, error, time.time(), attempt),
                     )
                     self.active = None
+                    self.awaiting_runtime = False
                     self.last_activity = time.time()
                     self.phase = (
                         "error"
@@ -503,6 +598,13 @@ def create_controller(controller: Controller, token: str) -> FastAPI:
     @app.get("/v1/status")
     def status():
         return controller.status()
+
+    @app.post("/v1/manager")
+    def manager(update: ManagerUpdate):
+        try:
+            return controller.manager_update(update)
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from None
 
     @app.post("/v1/attachment")
     def attach(attachment: Attachment):
