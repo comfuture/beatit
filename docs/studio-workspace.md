@@ -141,6 +141,8 @@ Outside repeat mode, draft edits continue to update playback immediately.
 With Audio enabled, the media element's clock drives both tracks. Buffering or
 source changes suspend drum scheduling until the source resumes. With Audio off,
 the AudioContext clock drives the drums, including when the source is unavailable.
+The requested start position survives initial seeking and buffering, so a delayed
+media startup callback does not skip the first drum hit.
 Short lookahead scheduling keeps synthesized notes aligned through speed changes.
 Both output gates are scheduled on the audio clock at the region end, cutting
 source audio and drum tails even if browser UI timers run late. A shared compressor

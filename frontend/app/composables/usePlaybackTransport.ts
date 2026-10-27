@@ -37,6 +37,7 @@ export function usePlaybackTransport(
   let running = false;
   let anchorTime = 0;
   let anchorPosition = 0;
+  let pendingStart: number | undefined;
   let cursor = 0;
   let operation = 0;
   let disposed = false;
@@ -123,7 +124,7 @@ export function usePlaybackTransport(
     setPosition(range.value ? range.value.start : duration.value);
     if (repeat) void play();
   }
-  function pump() {
+  function pump(notBefore?: number) {
     if (!running || !context) return;
     const now = clock();
     if (now >= end() - 0.001) { finish(); return; }
@@ -131,7 +132,7 @@ export function usePlaybackTransport(
     const horizon = Math.min(end(), now + 0.12 * rate.value);
     while (cursor < passNotes.length && passNotes[cursor]!.time < horizon) {
       const hit = passNotes[cursor++]!;
-      if (hit.time >= now - 0.04 && hit.time < end())
+      if (hit.time >= (notBefore ?? now - 0.04) && hit.time < end())
         synth?.hit(hit, context.currentTime + Math.max(0, hit.time - now) / rate.value);
     }
   }
@@ -139,14 +140,15 @@ export function usePlaybackTransport(
     if (!playing.value || disposed || running || !context) return;
     // Let media seeking/buffering settle before starting the matching drums.
     if (audioEnabled.value && (sourceLoading || player.value?.seeking)) return;
-    anchorPosition = position.value;
+    anchorPosition = pendingStart ?? position.value;
+    pendingStart = undefined;
     anchorTime = context.currentTime;
     running = true;
-    // The audio clock can advance during startup. Include the anchor's first
-    // note rather than searching from a slightly later second clock reading.
+    // Startup events may arrive after the media clock has advanced. Schedule
+    // from the requested position once, then use the normal lateness cutoff.
     resetNotes(anchorPosition);
     gateOutputs();
-    pump();
+    pump(anchorPosition);
     if (!running) return;
     timer = setInterval(pump, 25);
     const sample = () => {
@@ -172,6 +174,7 @@ export function usePlaybackTransport(
       if (token !== operation || disposed) return;
       if (refreshNotes || !repeatEnabled.value || !range.value) useDraftNotes();
       if (position.value < start() || position.value >= end() - 0.001) setPosition(start());
+      pendingStart = position.value;
       error.value = "";
       playing.value = true;
       if (audioEnabled.value) {
@@ -192,6 +195,7 @@ export function usePlaybackTransport(
   }
   function pause() {
     operation++;
+    pendingStart = undefined;
     resumeSource = false;
     const now = clock();
     playing.value = false;

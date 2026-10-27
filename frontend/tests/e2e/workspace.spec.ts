@@ -856,8 +856,18 @@ test("suspicious beat review is usable on a compact screen", async ({ page }) =>
   expect(state.errors).toEqual([]);
 });
 
-async function audioProbe(page: Page, clockReadStep = 0) {
-  await page.addInitScript((clockReadStep) => {
+async function audioProbe(page: Page, clockReadStep = 0, mediaClockLeadMs = 0) {
+  await page.addInitScript(({ clockReadStep, mediaClockLeadMs }) => {
+    if (mediaClockLeadMs) {
+      const currentTime = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "currentTime")!;
+      Object.defineProperty(HTMLMediaElement.prototype, "currentTime", {
+        ...currentTime,
+        get() {
+          // Model media advancing before the startup callbacks receive control.
+          return currentTime.get!.call(this) + (this.paused ? 0 : mediaClockLeadMs / 1000);
+        },
+      });
+    }
     if (clockReadStep) {
       const readTime = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, "currentTime")!.get!;
       let reads = 0;
@@ -903,7 +913,7 @@ async function audioProbe(page: Page, clockReadStep = 0) {
       }));
       if (state.levels.length > 500) state.levels.shift();
     }, 20);
-  }, clockReadStep);
+  }, { clockReadStep, mediaClockLeadMs });
 }
 
 const auditionEvents: DrumEvent[] = [
@@ -915,7 +925,7 @@ const auditionEvents: DrumEvent[] = [
 ];
 
 test("bar playback mixes selected audio and draft drums then stops both at the boundary", async ({ page }) => {
-  await audioProbe(page);
+  await audioProbe(page, 0, 80);
   const state = await setup(page, { events: auditionEvents, audioTone: true });
   await openSession(page);
   const audioTrack = page.locator('.mixer-track-summary[data-track="audio"]');
