@@ -106,6 +106,22 @@ def test_idle_manager_renews_lease_without_allocating(managed, tmp_path):
     assert transport.executed == []
 
 
+def test_idle_release_race_does_not_withdraw_an_accepted_jobs_manager_lease(managed):
+    controller, transport, _ = managed
+    controller.attach(session(), 90)
+    transport.marker = {"fingerprint": controller.fingerprint}
+    transport.finish.clear()
+    controller.submit(JOB, ATTEMPT)
+    assert transport.launched.wait(3)
+    status = controller.manager_update(ManagerUpdate(phase="releasing"))
+    assert status["active"] is True
+    assert status["can_allocate"] is True
+    with pytest.raises(ValueError, match="active"):
+        controller.detach()
+    controller.cancel(JOB, ATTEMPT)
+    assert finish(controller)["status"] == "cancelled"
+
+
 def test_queued_job_allocates_attaches_and_completes_with_one_runtime(managed, tmp_path):
     controller, transport, directory = managed
     manager = FakeManager(tmp_path / "manager", controller)

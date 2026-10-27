@@ -133,7 +133,11 @@ class Controller:
             raise ValueError("Server allocation is disabled")
         with self.lock:
             self.manager_until = time.time() + update.lease_seconds
-            self.manager_phase = update.phase
+            # A job may have arrived since the manager last observed idle. Do not
+            # withdraw its healthy lease while the subsequent detach is refused.
+            self.manager_phase = (
+                "idle" if update.phase == "releasing" and self.active else update.phase
+            )
             self.manager_error = update.error
         return self.status()
 
