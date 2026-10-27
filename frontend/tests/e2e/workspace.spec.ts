@@ -52,7 +52,8 @@ function sampleJob() {
     },
   };
 }
-async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, events = initialEvents as DrumEvent[], audioTone = false, colab = false } = {}) {
+async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, events = initialEvents as DrumEvent[], audioTone = false, colab = false, serverManaged = false } = {}) {
+  const colabExecution = colab || serverManaged;
   let job = sampleJob();
   job.result.grid.offset = offset;
   job.result.options.offset = offset;
@@ -65,7 +66,8 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
   let jobEvents = structuredClone(events);
   let systemRequests = 0;
   const runtime: NonNullable<SystemInfo["remote_runtime"]> = {
-    state: "ready", accelerator: "T4", prepared: true, idle_timeout_seconds: 600,
+    state: serverManaged ? "idle" : "ready", accelerator: "T4", prepared: !serverManaged, idle_timeout_seconds: 600,
+    ...(serverManaged ? { allocation_mode: "server", can_allocate: true, manager_error: null } : {}),
   };
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -76,9 +78,9 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       systemRequests++;
       return route.fulfill({
         json: {
-          devices: colab ? ["cuda"] : ["cpu"],
-          default_device: colab ? "cuda" : "cpu",
-          ...(colab ? {
+          devices: colabExecution ? ["cuda"] : ["cpu"],
+          default_device: colabExecution ? "cuda" : "cpu",
+          ...(colabExecution ? {
             execution_backend: "colab", execution_label: "Google Colab GPU",
             remote_runtime: { ...runtime },
           } : {}),
@@ -98,10 +100,11 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       );
       job.status = "running";
       job.progress = {
-        stage: colab ? "preparing" : "separating",
-        progress: colab ? 0.03 : 0.42,
-        message: colab ? "Colab 실행 환경 준비 중" : "드럼 분리 중",
+        stage: serverManaged ? "allocating" : colabExecution ? "preparing" : "separating",
+        progress: colabExecution ? 0.03 : 0.42,
+        message: serverManaged ? "Colab GPU 할당 중" : colabExecution ? "Colab 실행 환경 준비 중" : "드럼 분리 중",
       };
+      if (serverManaged) runtime.state = "allocating";
       (job as any).result = undefined;
       return route.fulfill({ status: 202, json: job });
     }
@@ -222,6 +225,10 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       runtime.state = state;
       runtime.prepared = prepared;
     },
+    manager: (canAllocate: boolean, error: string | null = null) => {
+      runtime.can_allocate = canAllocate;
+      runtime.manager_error = error;
+    },
     progress: (stage: string, message: string, progress: number) => {
       job.status = "running";
       job.progress = { stage, progress, message };
@@ -274,6 +281,42 @@ test("Colab execution shows processing location, refreshed readiness and remote 
   await expect(page.getByRole("heading", { name: "분석이 취소되었습니다" })).toBeVisible();
   expect(state.errors).toEqual([]);
 });
+
+test("server-managed Colab accepts an idle session and allocates a GPU on analysis", async ({ page }) => {
+  const state = await setup(page, { serverManaged: true });
+  await expect(page.locator(".source-panel").getByRole("status")).toHaveText("분석 시 Colab GPU 자동 할당");
+  await expect(page.locator(".sidebar-footer .engine-indicator")).not.toHaveClass(/online/);
+  await page.getByLabel("소스 파일 선택").setInputFiles({
+    name: "input.wav", mimeType: "audio/wav", buffer: Buffer.from("test audio"),
+  });
+  await expect(page.getByRole("button", { name: "분석 시작", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "분석 시작", exact: true }).click();
+  const processing = page.locator(".processing-workspace");
+  await expect(processing.locator(".process-stage.active strong")).toHaveText("Colab GPU 준비");
+  await expect(processing).toContainText("Colab GPU 할당 중");
+  await expect(page.locator(".sidebar-footer").getByRole("status")).toHaveText("Colab GPU 할당 중", { timeout: 15000 });
+  await expect(page.locator(".sidebar-footer .engine-indicator")).not.toHaveClass(/online/);
+  expect(state.errors).toEqual([]);
+});
+
+for (const scenario of [
+  { name: "offline", canAllocate: false, error: null, prepared: true, status: "Colab 관리자 연결 대기" },
+  { name: "authentication error", canAllocate: true, error: "서버 Colab 인증을 다시 진행해야 합니다.", prepared: false, status: "서버 Colab 인증을 다시 진행해야 합니다." },
+]) {
+  test(`server-managed Colab blocks new analysis when the manager reports ${scenario.name}`, async ({ page }) => {
+    const state = await setup(page, { serverManaged: true });
+    state.runtime(scenario.prepared ? "ready" : "idle", scenario.prepared);
+    state.manager(scenario.canAllocate, scenario.error);
+    await page.reload();
+    await expect(page.locator(".source-panel").getByRole("status")).toHaveText(scenario.status);
+    await expect(page.locator(".sidebar-footer .engine-indicator")).not.toHaveClass(/online/);
+    await page.getByLabel("소스 파일 선택").setInputFiles({
+      name: "input.wav", mimeType: "audio/wav", buffer: Buffer.from("test audio"),
+    });
+    await expect(page.getByRole("button", { name: "분석 시작", exact: true })).toBeDisabled();
+    expect(state.errors).toEqual([]);
+  });
+}
 
 test("apply score headings refreshes the preview and exports while preserving beat drafts", async ({ page }) => {
   const state = await setup(page);

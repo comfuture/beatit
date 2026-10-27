@@ -8,7 +8,7 @@ import {
 } from "~/types/studio";
 import { validateOptions } from "~/utils/rhythm";
 import { mergeBeatReview, reviewAfterEdit } from "~/utils/beatReview";
-import { colabConnectionUnavailable } from "~/utils/execution";
+import { colabConnectionUnavailable, runtimeStatus } from "~/utils/execution";
 
 export function useStudio() {
   const jobs = ref<Job[]>([]);
@@ -228,7 +228,7 @@ export function useStudio() {
   async function upload() {
     if (!selectedFile.value || busy.value || !system.value?.ffmpeg) return;
     if (colabConnectionUnavailable(system.value)) {
-      error.value = "Colab 연결 대기 중입니다. 연결 후 분석을 시작하세요.";
+      error.value = runtimeStatus(system.value);
       return;
     }
     try {

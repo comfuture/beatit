@@ -100,6 +100,9 @@ export interface SystemInfo {
     accelerator: string;
     prepared: boolean;
     idle_timeout_seconds: number;
+    allocation_mode?: "server" | "operator";
+    can_allocate?: boolean;
+    manager_error?: string | null;
   };
   devices: string[];
   default_device: string;

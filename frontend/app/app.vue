@@ -2,7 +2,7 @@
 import type { SplitterItem } from "@nuxt/ui";
 import { kit, statusLabels } from "~/types/studio";
 import { formatTime } from "~/utils/rhythm";
-import { isColabExecution, runtimeStatus } from "~/utils/execution";
+import { colabConnectionUnavailable, isColabExecution, runtimeStatus } from "~/utils/execution";
 
 const studio = useStudio();
 const {
@@ -34,7 +34,8 @@ const runtimeDescription = computed(() => runtimeStatus(system.value));
 const runtimeConnected = computed(() => {
   if (!colabExecution.value) return true;
   const runtime = system.value?.remote_runtime;
-  return !!runtime?.prepared && ["ready", "running", "idle"].includes(runtime.state);
+  return !colabConnectionUnavailable(system.value) && !!runtime?.prepared &&
+    ["ready", "running", "idle"].includes(runtime.state);
 });
 const sidebarOpen = ref(true);
 const inspectorOpen = ref(false);
