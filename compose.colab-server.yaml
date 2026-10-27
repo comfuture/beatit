@@ -1,0 +1,48 @@
+# Add after compose.yaml and compose.colab.yaml for a server with its own OAuth login.
+services:
+  colab-controller:
+    environment:
+      COLAB_ALLOCATION_MODE: server
+
+  colab-manager:
+    image: ${BEATIT_CONTROLLER_IMAGE:-beatit-colab-controller:local}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 120s
+    command: ["python", "-m", "transcription.colab_manager"]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,mode=1777
+    environment:
+      COLAB_MANAGER_STATE: /app/colab-state
+      COLAB_OAUTH_TOKEN_FILE: /run/colab-auth/.config/colab-cli/token.json
+      COLAB_CONTROLLER_URL: http://colab-controller:8001
+      COLAB_CONTROLLER_TOKEN_FILE: /run/secrets/colab_controller_token
+      COLAB_SESSION_NAME: beatit-chunsik
+    secrets:
+      - colab_controller_token
+    volumes:
+      - colab-manager-state:/app/colab-state
+      - colab-auth:/run/colab-auth:ro
+    depends_on:
+      colab-controller:
+        condition: service_healthy
+    cpus: 0.5
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pathlib,time; assert time.time()-pathlib.Path('/app/colab-state/heartbeat').stat().st_mtime < 240"]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  colab-manager-state:
+  colab-auth:
+    external: true
+    name: beatit_colab-auth
