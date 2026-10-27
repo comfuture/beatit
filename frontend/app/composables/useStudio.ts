@@ -243,7 +243,7 @@ export function useStudio() {
     try {
       const form = new FormData();
       form.append("file", selectedFile.value);
-      form.append("options", JSON.stringify(options.value));
+      form.append("options", JSON.stringify({ ...options.value, tom_refinement: true }));
       const job = await new Promise<Job>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "/api/jobs");
@@ -394,7 +394,7 @@ export function useStudio() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          options: revision.value,
+          options: { ...revision.value, tom_refinement: true },
           events: eventsDirty.value ? events.value : null,
           metadata: metadata.value,
           beat_review: beatReview.value,

@@ -98,6 +98,7 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       expect(route.request().postDataBuffer()?.toString()).toContain(
         'filename="input.wav"',
       );
+      expect(route.request().postDataBuffer()?.toString()).toContain('"tom_refinement":true');
       job.status = "running";
       job.progress = {
         stage: serverManaged ? "allocating" : colabExecution ? "preparing" : "separating",
@@ -213,7 +214,7 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
   });
   await page.goto("/");
   await expect(
-    page.getByRole("button", { name: "새 세션", exact: true }),
+    page.getByRole("button", { name: "새로 만들기", exact: true }),
   ).toBeVisible();
   return {
     errors,
@@ -241,7 +242,10 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
   };
 }
 async function openSession(page: Page) {
-  await page.getByRole("button", { name: /Studio session/ }).click();
+  await page.getByRole("button", { name: "불러오기", exact: true }).click();
+  const browser = page.getByRole("dialog", { name: "불러오기", exact: true });
+  await browser.getByRole("button", { name: /Studio session/ }).click();
+  await browser.getByRole("button", { name: "불러오기", exact: true }).click();
   await expect(
     page.getByRole("region", { name: "드럼 비트 편집기" }),
   ).toBeVisible();
@@ -350,7 +354,7 @@ test("apply score headings refreshes the preview and exports while preserving be
   await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
   await page.reload();
   await expect(form.getByLabel("악보 제목")).toHaveValue("새 악보 & Live");
-  await expect(page.getByRole("button", { name: /Studio session/ })).toBeVisible();
+  await expect(page.locator(".header-filename")).toHaveText("Studio session.wav");
   expect(state.errors).toEqual([]);
 });
 
@@ -358,7 +362,7 @@ test("heading drafts guard navigation and survive a failed apply", async ({ page
   const state = await setup(page);
   await openSession(page);
   await page.getByLabel("악보 제목").fill("Draft title");
-  await page.getByRole("button", { name: "새 세션", exact: true }).click();
+  await page.getByRole("button", { name: "새로 만들기", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "편집 내용을 버릴까요?" })).toBeVisible();
   await page.getByRole("button", { name: "편집 계속" }).click();
   state.rejectHeading(true);
@@ -378,7 +382,7 @@ test("compact session properties can remove the author credit", async ({ page })
   await openSession(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "속성 패널", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "세션 속성" });
+  const dialog = page.getByRole("dialog", { name: "악보 설정" });
   await dialog.getByLabel("저자").fill("");
   await dialog.getByRole("button", { name: "적용", exact: true }).click();
   await expect.poll(() => state.getHeading()).toEqual({ title: "Studio session", author: "" });
@@ -406,6 +410,7 @@ test("edit, undo, redo, save, score and export use session data", async ({
   await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
   await expect.poll(() => state.getSaved()?.events?.length).toBe(3);
   expect(state.getSaved().options.bpm).toBe(126);
+  expect(state.getSaved().options.tom_refinement).toBe(true);
   await expect(
     page.getByRole("button", { name: "악보 재생성", exact: true }),
   ).toBeDisabled();
@@ -473,7 +478,7 @@ test("draft guard and reversible navigation preserve unsaved work", async ({
   await page
     .getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true })
     .click();
-  await page.getByRole("button", { name: "새 세션", exact: true }).click();
+  await page.getByRole("button", { name: "새로 만들기", exact: true }).click();
   await expect(
     page.getByRole("dialog", { name: "편집 내용을 버릴까요?" }),
   ).toBeVisible();
@@ -481,7 +486,7 @@ test("draft guard and reversible navigation preserve unsaved work", async ({
   await expect(
     page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "새 세션", exact: true }).click();
+  await page.getByRole("button", { name: "새로 만들기", exact: true }).click();
   await page.getByRole("button", { name: "변경 버리고 이동" }).click();
   await expect(
     page.getByRole("heading", { name: "새로운 드럼 세션" }),
@@ -558,7 +563,7 @@ test("resizable panels and compact layout remain usable", async ({ page }) => {
   expect(after!.width).toBeGreaterThan(before!.width + 40);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "속성 패널" }).click();
-  await expect(page.getByRole("dialog", { name: "세션 속성" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "악보 설정" })).toBeVisible();
   await expect(
     page.getByRole("spinbutton", { name: "템포 BPM" }),
   ).toBeVisible();
@@ -580,7 +585,8 @@ test('session deletion requires confirmation and updates history', async ({ page
   await page.getByRole('button', { name: '세션 삭제', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '세션 삭제', exact: true }).click();
   await expect(page.getByRole('heading', { name: '새로운 드럼 세션' })).toBeVisible();
-  await expect(page.getByText('아직 저장된 세션이 없습니다.')).toBeVisible();
+  await page.getByRole('button', { name: '불러오기', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '불러오기', exact: true })).toContainText('저장된 세션이 없습니다.');
 });
 
 test("beat editor follows playback, seeking and tab changes by default", async ({ page }) => {
@@ -779,7 +785,7 @@ test("suspicious beats support unchanged acceptance, undo, save and reload", asy
   await openSession(page);
   const issue = page.locator('[data-review-tick="0"]');
   const cell = page.getByRole("button", { name: "1마디 1번째 격자 Snare", exact: true });
-  await expect(page.getByText("자동 전사는 초안입니다", { exact: true })).toBeVisible();
+  await expect(page.getByText("자동 전사는 초안입니다", { exact: true })).not.toBeVisible();
   await expect(issue).toContainText("손으로 치는 파트가 동시에 3개 이상");
   await expect(cell).toHaveClass(/needs-review/);
   await expect(cell).toHaveAttribute("aria-describedby", "beat-review-0");
@@ -912,11 +918,11 @@ test("bar playback mixes selected audio and draft drums then stops both at the b
   await audioProbe(page);
   const state = await setup(page, { events: auditionEvents, audioTone: true });
   await openSession(page);
-  const audioTrack = page.getByRole("button", { name: "오디오", exact: true });
-  const drumTrack = page.getByRole("button", { name: "드럼비트", exact: true });
-  await expect(audioTrack).toHaveAttribute("aria-pressed", "true");
-  await expect(drumTrack).toHaveAttribute("aria-pressed", "false");
-  await drumTrack.click();
+  const audioTrack = page.locator('.mixer-track-summary[data-track="audio"]');
+  const drumTrack = page.locator('.mixer-track-summary[data-track="drums"]');
+  await expect(audioTrack).toHaveAttribute("data-enabled", "true");
+  await expect(drumTrack).toHaveAttribute("data-enabled", "false");
+  await toggleTrack(page, "드럼비트");
   await page.getByRole("combobox", { name: "재생 소스" }).click();
   await page.getByRole("option", { name: "분리된 드럼", exact: true }).click();
   await page.getByRole("spinbutton", { name: "편집 마디" }).fill("2");
@@ -944,8 +950,8 @@ test("drum-only playback hears unsaved edits and track toggles preserve position
   await audioProbe(page, 5);
   const state = await setup(page, { events: auditionEvents, audioTone: true });
   await openSession(page);
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
-  await page.getByRole("button", { name: "오디오", exact: true }).click();
+  await toggleTrack(page, "드럼비트");
+  await toggleTrack(page, "오디오");
   await page.getByRole("spinbutton", { name: "편집 마디" }).fill("2");
   await page.getByRole("button", { name: "2마디 1번째 격자 Kick", exact: true }).click();
   await page.getByRole("button", { name: "2마디 1번째 격자 High tom", exact: true }).click();
@@ -954,13 +960,13 @@ test("drum-only playback hears unsaved edits and track toggles preserve position
   expect(await page.evaluate(() => (window as any).__audioProbe.notes.some((note: any) => note.frequency === 145))).toBe(false);
   await expect.poll(() => page.evaluate(() => (window as any).__audioProbe.levels.some((level: number[]) => level[0]! > 0.01 && level[1]! < 0.0001))).toBe(true);
   expect(await page.locator("audio").evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
-  await page.getByRole("button", { name: "오디오", exact: true }).click();
+  await toggleTrack(page, "오디오");
   await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => !audio.paused && audio.currentTime >= 2 && audio.currentTime < 4)).toBe(true);
   await page.getByRole("button", { name: "정지", exact: true }).click();
   await expect(page.getByRole("slider", { name: "오디오 재생 위치" })).toHaveAttribute("aria-valuenow", "2");
   expect(state.getSaved()).toBeNull();
-  await page.getByRole("button", { name: "오디오", exact: true }).click();
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
+  await toggleTrack(page, "오디오");
+  await toggleTrack(page, "드럼비트");
   await expect(page.getByRole("button", { name: "재생", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "2마디 구간재생", exact: true })).toBeDisabled();
   expect(state.errors).toEqual([]);
@@ -970,7 +976,7 @@ test("mixed playback preserves a region across source/rate changes and supports 
   await audioProbe(page);
   const state = await setup(page, { events: auditionEvents, audioTone: true });
   await openSession(page);
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
+  await toggleTrack(page, "드럼비트");
   await page.getByRole("spinbutton", { name: "편집 마디" }).fill("2");
   await page.getByRole("combobox", { name: "재생 속도" }).click();
   await page.getByRole("option", { name: "0.5×", exact: true }).click();
@@ -995,8 +1001,8 @@ test("drums can play without a working audio source and fit a mobile toolbar", a
   await audioProbe(page);
   const state = await setup(page, { events: auditionEvents });
   await openSession(page);
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
-  await page.getByRole("button", { name: "오디오", exact: true }).click();
+  await toggleTrack(page, "드럼비트");
+  await toggleTrack(page, "오디오");
   await page.route("**/files/drums.wav", (route) => route.fulfill({ status: 404, body: "missing" }));
   await page.getByRole("combobox", { name: "재생 소스" }).click();
   await page.getByRole("option", { name: "분리된 드럼", exact: true }).click();
@@ -1098,7 +1104,7 @@ test("contextual clear-selection button restores full playback without interrupt
   const clear = page.getByRole("button", { name: "선택구간 해제", exact: true });
   await expect(clear).toHaveCount(0);
   await expect(page.locator(".playback-status")).toContainText("전체 재생");
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
+  await toggleTrack(page, "드럼비트");
   await page.getByRole("spinbutton", { name: "편집 마디" }).fill("2");
   await page.getByRole("button", { name: "2마디 구간재생", exact: true }).click();
   await expect(clear).toBeEnabled();
@@ -1141,7 +1147,7 @@ test("waveform drag previews a range and auditions only the selected time", asyn
   await expect(page.locator(".playback-status")).toContainText("선택구간 재생");
   expect(Number(await wave.getAttribute("aria-valuenow"))).toBeCloseTo(2, 1);
   expect(Number(await page.locator(".playback-region").getAttribute("data-end"))).toBeCloseTo(3, 1);
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
+  await toggleTrack(page, "드럼비트");
   await page.screenshot({ path: "test-results/waveform-selection-desktop.png", fullPage: true });
   await page.getByRole("button", { name: "재생", exact: true }).click();
   await expect(page.getByRole("button", { name: "일시 정지", exact: true })).toBeVisible();
@@ -1248,7 +1254,7 @@ test("looped audio and drums apply edits on the next pass, including across sour
   await dragWaveform(page, 0, 0.75);
   await page.getByRole("spinbutton", { name: "편집 마디" }).fill("3");
   await repeat.click();
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
+  await toggleTrack(page, "드럼비트");
   await page.getByRole("combobox", { name: "재생 속도" }).click();
   await page.getByRole("option", { name: "0.75×", exact: true }).click();
   await page.getByRole("button", { name: "재생", exact: true }).click();
@@ -1304,8 +1310,8 @@ for (const mode of ["mixed", "drums"] as const) {
       { time: 6, pitch: 35, strength: 0.8 }, { time: 7.5, pitch: 38, strength: 0.8 },
     ] });
     await openSession(page);
-    await page.getByRole("button", { name: "드럼비트", exact: true }).click();
-    if (mode === "drums") await page.getByRole("button", { name: "오디오", exact: true }).click();
+    await toggleTrack(page, "드럼비트");
+    if (mode === "drums") await toggleTrack(page, "오디오");
     await dragWaveform(page, 0.75, 1);
     const repeat = page.getByRole("button", { name: "구간 반복", exact: true });
     await repeat.click();
@@ -1328,8 +1334,24 @@ for (const mode of ["mixed", "drums"] as const) {
   });
 }
 
+async function openMixer(page: Page) {
+  const trigger = page.getByRole("button", { name: "재생 트랙 조절", exact: true });
+  if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "재생 트랙 조절", exact: true });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
+async function toggleTrack(page: Page, label: string) {
+  const dialog = await openMixer(page);
+  const toggle = dialog.getByRole("switch", { name: label, exact: true });
+  await toggle.click();
+  await toggle.press("Escape");
+  await expect(dialog).not.toBeVisible();
+}
+
 async function openTrackVolume(page: Page, label: string) {
-  await page.getByRole("button", { name: `${label} 볼륨 조절`, exact: true }).click();
+  await openMixer(page);
   const slider = page.getByRole("slider", { name: `${label} 볼륨`, exact: true });
   await expect(slider).toHaveAttribute("aria-orientation", "vertical");
   // CDP touch gestures below bypass Playwright's actionability checks. Wait for
@@ -1345,7 +1367,7 @@ async function setTrackVolume(page: Page, label: string, value: number) {
   await expect(slider).toHaveAttribute("aria-valuenow", String(value));
   await slider.press("Escape");
   await expect(slider).not.toBeVisible();
-  await expect(page.getByRole("button", { name: `${label} 볼륨 조절`, exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "재생 트랙 조절", exact: true })).toBeFocused();
 }
 
 test("independent track levels change the rendered loop mix without restarting playback", async ({ page }) => {
@@ -1354,11 +1376,11 @@ test("independent track levels change the rendered loop mix without restarting p
     time: index * 0.125, pitch: 50, strength: 0.8,
   })) });
   await openSession(page);
-  const audioVolume = page.getByRole("button", { name: "오디오 볼륨 조절", exact: true });
-  const drumVolume = page.getByRole("button", { name: "드럼비트 볼륨 조절", exact: true });
+  const audioVolume = page.locator('.mixer-track-summary[data-track="audio"] .mono');
+  const drumVolume = page.locator('.mixer-track-summary[data-track="drums"] .mono');
   await expect(audioVolume).toHaveText("80%");
   await expect(drumVolume).toHaveText("80%");
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
+  await toggleTrack(page, "드럼비트");
   await dragWaveform(page, 0.25, 0.5);
   const repeat = page.getByRole("button", { name: "구간 반복", exact: true });
   await repeat.click();
@@ -1396,8 +1418,8 @@ test("independent track levels change the rendered loop mix without restarting p
   const silent = await measure();
   expect(silent.every(value => value < 0.0001)).toBe(true);
   // Zero volume does not switch off a track, pause playback or cancel the range.
-  await expect(page.getByRole("button", { name: "오디오", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("button", { name: "드럼비트", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('.mixer-track-summary[data-track="audio"]')).toHaveAttribute("data-enabled", "true");
+  await expect(page.locator('.mixer-track-summary[data-track="drums"]')).toHaveAttribute("data-enabled", "true");
   await expect(page.getByRole("button", { name: "일시 정지", exact: true })).toBeVisible();
   await expect(repeat).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".playback-region")).toHaveAttribute("data-start", "2");
@@ -1406,10 +1428,10 @@ test("independent track levels change the rendered loop mix without restarting p
   await setTrackVolume(page, "드럼비트", 60);
   await page.getByRole("combobox", { name: "재생 소스" }).click();
   await page.getByRole("option", { name: "분리된 드럼", exact: true }).click();
-  await page.getByRole("button", { name: "오디오", exact: true }).click();
-  await page.getByRole("button", { name: "오디오", exact: true }).click();
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
-  await page.getByRole("button", { name: "드럼비트", exact: true }).click();
+  await toggleTrack(page, "오디오");
+  await toggleTrack(page, "오디오");
+  await toggleTrack(page, "드럼비트");
+  await toggleTrack(page, "드럼비트");
   await expect(audioVolume).toHaveText("30%");
   await expect(drumVolume).toHaveText("60%");
   await expect(page.getByRole("button", { name: "일시 정지", exact: true })).toBeVisible();
@@ -1421,7 +1443,7 @@ test("independent track levels change the rendered loop mix without restarting p
   expect(state.errors).toEqual([]);
 });
 
-test("track volume popovers open on demand and support vertical touch adjustment on a compact screen", async ({ page }) => {
+test("track mixer opens both vertical volume controls and supports touch adjustment on a compact screen", async ({ page }) => {
   const state = await setup(page);
   await openSession(page);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1430,13 +1452,13 @@ test("track volume popovers open on demand and support vertical touch adjustment
   await expect(audioVolume).toHaveCount(0);
   await expect(drumVolume).toHaveCount(0);
   await openTrackVolume(page, "오디오");
-  const dialog = page.getByRole("dialog", { name: "오디오 볼륨 조절" });
+  const dialog = page.getByRole("dialog", { name: "재생 트랙 조절" });
   const popup = (await dialog.boundingBox())!;
   expect(popup.x).toBeGreaterThanOrEqual(0);
   expect(popup.y).toBeGreaterThanOrEqual(0);
   expect(popup.x + popup.width).toBeLessThanOrEqual(390);
   expect(popup.y + popup.height).toBeLessThanOrEqual(844);
-  const bounds = (await dialog.locator(".track-volume-slider").boundingBox())!;
+  const bounds = (await dialog.locator(".track-volume-slider").first().boundingBox())!;
   expect(bounds.height).toBeGreaterThan(100);
   const client = await page.context().newCDPSession(page);
   const thumb = (await audioVolume.boundingBox())!;
@@ -1455,19 +1477,19 @@ test("track volume popovers open on demand and support vertical touch adjustment
   await page.screenshot({ path: "test-results/track-volumes-mobile.png", fullPage: true });
   await audioVolume.press("Escape");
   await expect(audioVolume).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "오디오 볼륨 조절", exact: true })).toBeFocused();
-  // Opening the other popover dismisses the first without changing either toggle.
+  await expect(page.getByRole("button", { name: "재생 트랙 조절", exact: true })).toBeFocused();
+  // Both tracks share one popover and retain independent levels and toggles.
   await openTrackVolume(page, "오디오");
   await openTrackVolume(page, "드럼비트");
-  await expect(audioVolume).not.toBeVisible();
+  await expect(audioVolume).toBeVisible();
   await expect(drumVolume).toHaveAttribute("aria-valuenow", "80");
   await drumVolume.press("Escape");
   await setTrackVolume(page, "드럼비트", 50);
-  await expect(page.getByRole("button", { name: "드럼비트", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator('.mixer-track-summary[data-track="drums"]')).toHaveAttribute("data-enabled", "false");
   await openTrackVolume(page, "오디오");
-  await page.getByRole("slider", { name: "오디오 재생 위치" }).click();
+  await page.getByRole("tab", { name: "비트 편집", exact: true }).click();
   await expect(audioVolume).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "오디오 볼륨 조절", exact: true })).toHaveText(`${touchedVolume}%`);
+  await expect(page.locator('.mixer-track-summary[data-track="audio"] .mono')).toHaveText(`${touchedVolume}%`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await client.detach();
   expect(state.errors).toEqual([]);
@@ -1507,7 +1529,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     await expect.poll(usable).toBe(true);
     // Restoring a saved small pane must respect its content's current minimum.
     await page.reload();
-    if (viewport.width < 1024) await page.getByRole("button", { name: "세션 브라우저 토글" }).click();
+    if (viewport.width < 1024) await page.getByRole("button", { name: "사이드바 토글" }).click();
     await openSession(page);
     await expect.poll(usable).toBe(true);
     expect(state.errors).toEqual([]);

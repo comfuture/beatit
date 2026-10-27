@@ -309,6 +309,8 @@ defineExpose({ seek, playBar: transport.playBar });
       <UTooltip :text="range ? '선택구간을 반복합니다. 비트 수정은 다음 반복부터 반영됩니다.' : '마디나 웨이브폼에서 재생 구간을 먼저 선택하세요.'">
         <UButton
           label="구간 반복"
+          aria-label="구간 반복"
+          :ui="{ label: 'hidden md:inline' }"
           icon="i-lucide-repeat"
           :aria-pressed="repeatEnabled"
           :color="repeatEnabled ? 'primary' : 'neutral'"
@@ -318,32 +320,12 @@ defineExpose({ seek, playBar: transport.playBar });
           @click="repeatEnabled = !repeatEnabled"
         />
       </UTooltip>
-      <div class="playback-tracks" role="group" aria-label="재생 트랙">
-        <div class="playback-track">
-          <UButton
-            label="오디오"
-            icon="i-lucide-audio-lines"
-            :aria-pressed="audioEnabled"
-            :color="audioEnabled ? 'primary' : 'neutral'"
-            :variant="audioEnabled ? 'soft' : 'ghost'"
-            size="xs"
-            @click="audioEnabled = !audioEnabled"
-          />
-          <TrackVolume v-model="audioVolume" label="오디오" />
-        </div>
-        <div class="playback-track">
-          <UButton
-            label="드럼비트"
-            icon="i-lucide-drum"
-            :aria-pressed="drumsEnabled"
-            :color="drumsEnabled ? 'primary' : 'neutral'"
-            :variant="drumsEnabled ? 'soft' : 'ghost'"
-            size="xs"
-            @click="drumsEnabled = !drumsEnabled"
-          />
-          <TrackVolume v-model="drumVolume" label="드럼비트" />
-        </div>
-      </div>
+      <PlaybackMixer
+        v-model:audio-enabled="audioEnabled"
+        v-model:drums-enabled="drumsEnabled"
+        v-model:audio-volume="audioVolume"
+        v-model:drum-volume="drumVolume"
+      />
       <span class="transport-clock mono"
         >{{ formatTime(position)
         }}<small> / {{ formatTime(duration) }}</small></span

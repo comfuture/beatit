@@ -14,7 +14,7 @@ recording and for any use or sharing of the resulting score.
 
 ```text
 Audio/video → FFmpeg → Demucs drum stem → DrumSep kit stems → ADTOF onsets
-            → Beat This! beats/downbeats → optional high/low tom refinement
+            → Beat This! beats/downbeats → high/low tom refinement
             → rhythm grid → MusicXML → MuseScore SVG/PDF
 ```
 
@@ -22,7 +22,8 @@ Nuxt 4 and Nuxt UI provide a dark audio workspace with a session sidebar, resiza
 waveform/editor/inspector panels, source/stem playback, and score preview. The beat
 editor can audition its selected bar once. Independent Audio and Drum Beat toggles
 play the selected source, the current draft's synthesized drum pattern, or both
-together, with volume buttons opening separate vertical sliders for comparison; unsaved edits
+together. One compact mixer button shows both levels and opens side-by-side track
+toggles and vertical volume sliders; unsaved edits
 are audible without exporting MIDI. Drag across the waveform
 to select a playback range, then use **선택구간 해제** beside the selected time range
 to return to full-song playback. **구간 반복** repeats a selected range with both
@@ -91,8 +92,8 @@ extra on Linux.
 
 This is an experimental transcription tool. Verify and edit every score against
 the recording. The first bar follows detected downbeats, but the meter is the selected
-value, and a fixed tempo/grid approximates timing. Experimental high/low tom refinement
-can reuse cached kit stems after transcription; ambiguous hits retain the generic Tom
+value, and a fixed tempo/grid approximates timing. High/low tom refinement runs by
+default and reuses cached kit stems after transcription; ambiguous hits retain the generic Tom
 label. Individual drum sizes, ride/crash cymbals, rimshots, cross-sticks, and ghost notes
 are not distinguished. Open hi-hat detection favours precision.
 See [tom refinement](docs/tom-refinement.md) for its limits.

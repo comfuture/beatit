@@ -26,6 +26,12 @@ const emit = defineEmits<{
 const bar = ref(1);
 const velocity = ref(100);
 const follow = ref(true);
+const helpPopoverContent = {
+  side: "top" as const,
+  align: "end" as const,
+  collisionPadding: 12,
+  "aria-label": "편집 도움말",
+};
 const cells = computed(() =>
   Math.round(props.grid.bar_ticks / props.grid.step),
 );
@@ -175,6 +181,16 @@ function keyboard(event: KeyboardEvent) {
             @click="emit('seek', Math.max(0, tickTime(barOffset, grid)))"
         /></UTooltip>
       </div>
+      <UButton
+        v-if="pending.length"
+        :label="`확인 ${pending.length}`"
+        aria-label="다음 의심 박자"
+        icon="i-lucide-scan-search"
+        color="warning"
+        variant="soft"
+        size="xs"
+        @click="nextIssue"
+      />
       <div class="editor-playback-controls">
         <UTooltip text="선택한 마디를 재생합니다. 툴바의 구간 반복을 켜면 반복해서 들을 수 있습니다.">
           <UButton
@@ -188,24 +204,6 @@ function keyboard(event: KeyboardEvent) {
           />
         </UTooltip>
         <USwitch v-model="follow" label="재생 따라가기" size="xs" />
-      </div>
-    </div>
-    <div class="review-summary">
-      <div>
-        <strong>자동 전사는 초안입니다</strong>
-        <p>붉게 표시된 박자는 원음을 듣고 직접 확인하세요. 표시가 없는 박자에도 오류가 있을 수 있습니다.</p>
-      </div>
-      <div class="review-summary-actions">
-        <span role="status">확인 필요 {{ pending.length }}박자</span>
-        <UButton
-          label="다음 의심 박자"
-          icon="i-lucide-scan-search"
-          color="neutral"
-          variant="outline"
-          size="xs"
-          :disabled="!pending.length"
-          @click="nextIssue"
-        />
       </div>
     </div>
     <div class="beat-grid-scroll">
@@ -337,29 +335,41 @@ function keyboard(event: KeyboardEvent) {
           @click="emit('resolve', beat.tick)"
         />
       </div>
-      <p class="review-help">직접 수정한 뒤 또는 현재 타격이 맞으면 그대로 ‘해결’을 누르세요. 해결 상태는 악보 재생성 시 함께 저장되며, 실행 취소로 되돌릴 수 있습니다.</p>
     </div>
     <div class="editor-footer">
-      <span
-        >셀 클릭: 타격 추가 / 삭제
-        <span class="hidden xl:inline">· 방향키: 셀 이동</span></span
+      <UPopover
+        arrow
+        :content="helpPopoverContent"
       >
-      <div>
-        <span>새 타격 세기</span
-        ><USlider
-          v-model="velocity"
-          :min="1"
-          :max="127"
-          class="w-20"
+        <UButton
+          icon="i-lucide-circle-help"
+          aria-label="편집 도움말"
+          color="neutral"
+          variant="ghost"
           size="xs"
-          aria-label="새 타격 세기"
-          :disabled="disabled"
-        /><b class="mono">{{ velocity }}</b>
-      </div>
+          class="rounded-full"
+        />
+        <template #content>
+          <div class="editor-help-popover">
+            <dl>
+              <dt>셀 클릭</dt><dd>타격 추가 / 삭제</dd>
+              <dt>방향키</dt><dd>셀 이동</dd>
+            </dl>
+            <USeparator />
+            <div class="editor-velocity">
+              <span>새 타격 세기</span><b class="mono">{{ velocity }}</b>
+              <USlider
+                v-model="velocity"
+                :min="1"
+                :max="127"
+                size="xs"
+                aria-label="새 타격 세기"
+                :disabled="disabled"
+              />
+            </div>
+          </div>
+        </template>
+      </UPopover>
     </div>
-    <p class="editor-note">
-      저장된 악보 격자를 기준으로 편집합니다. BPM·격자 변경은 악보 재생성 후
-      반영됩니다.
-    </p>
   </section>
 </template>

@@ -8,7 +8,6 @@ defineEmits<{ apply: [] }>();
 
 <template>
   <form aria-label="악보 정보" class="space-y-3" @submit.prevent="$emit('apply')">
-    <div class="section-label">악보 정보</div>
     <UFormField label="악보 제목" name="score-title">
       <UInput
         v-model="metadata.title"
@@ -28,9 +27,6 @@ defineEmits<{ apply: [] }>();
         size="sm"
       />
     </UFormField>
-    <p class="text-xs text-muted leading-relaxed">
-      제목은 세션 이름과 별도로 저장됩니다. 적용하면 악보와 내보내기 파일이 갱신됩니다.
-    </p>
     <UButton
       type="submit"
       label="적용"

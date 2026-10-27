@@ -8,8 +8,10 @@ Processing still requires the local backend; this is not a PWA.
 
 ## Workspace
 
-- `USidebar`: searchable session history, new session and engine status. Collapses
-  to a rail on desktop and opens as a slideover on small screens.
+- `USidebar`: New, Open, session information and engine status. **불러오기**
+  opens a searchable file-style session picker with selection and an Open action.
+  The sidebar collapses to a rail on desktop and opens as a slideover on small
+  screens. The collapsed **ⓘ** popover exposes session information on demand.
 - `USplitter`: persistent widths for workspace/inspector and heights for audio/editor.
   The inspector moves into `USlideover` below 1100 px. The timeline and editor remain
   stacked, and the beat grid scrolls without overflowing the viewport.
@@ -41,14 +43,22 @@ Processing still requires the local backend; this is not a PWA.
   Clicking a measure (or focusing it and pressing Enter/Space) seeks the audio to
   its saved-grid start, clamped to zero for pickup bars, while preserving the
   playback and follow states. Measure targets scale with the page zoom.
-- Inspector: actual BPM, meter, bars and duration; draft hit counts; score settings;
-  editable score title and author with an explicit Apply action, also on mobile.
+- Inspector: rhythm settings, score title and author with an explicit Apply
+  action, also on mobile.
   The title initially uses the source filename without its extension, then is stored
   independently so naming a score never renames its source session. The author can
   be cleared. Heading changes participate in the unsaved-change guard and the main
   save action. Applying headings alone preserves unsaved rhythm edits and undo history.
-  model warnings; worker log and confirmed deletion. Unsaved changes require an
+  The inspector also provides model warnings, the worker log and confirmed deletion.
+  Unsaved changes require an
   explicit discard before switching sessions and trigger a browser leave warning.
+
+The inspector keeps score headings and rhythm settings visible. The left sidebar
+shows the saved tempo, meter, bar count and duration alongside the current draft's
+total hit count. Its **통계** button opens per-instrument hit counts, also available
+inside the collapsed information popover. In the editor, the bottom-right **?**
+popover contains cell shortcuts and new-hit velocity. Suspect-beat navigation appears only while reviews are pending;
+the grid colors and per-beat reasons carry the review state without a standing banner.
 
 `/api/jobs/{id}/waveform?source=audio.wav` returns at most 1200 amplitude peaks.
 It only reads allowlisted job audio, reads bounded blocks, and caches by file
@@ -73,11 +83,13 @@ make the heading visible in both renderers. Normal rhythm revisions retain metad
 The transport has independent **Audio** and **Drum Beat** toggles. Audio plays the
 selected SOURCE (original, separated drums or a kit stem); Drum Beat synthesizes
 the current draft with Web Audio. Both can be enabled for comparison. Turning both
-off pauses playback. Position, speed, pause and stop are shared. Each track has a
-separate volume button showing its current percentage. Clicking it opens a vertical
-**오디오 볼륨** or **드럼비트 볼륨** slider (0–100%, initially 80%) in a popover;
-the sliders are otherwise hidden. Escape or an outside click closes the popover,
-and keyboard/touch adjustment works on desktop and mobile. Levels change immediately, including during repeat playback,
+off pauses playback. Position, speed, pause and stop are shared. One shared mixer
+button shows both percentages; disabled tracks are dimmed. On mobile, repeat and
+mixer controls show icons only, retaining their accessible names.
+Clicking it opens two side-by-side columns, each with a track toggle and a vertical
+**오디오 볼륨** or **드럼비트 볼륨** slider (0–100%, initially 80%). Escape or an
+outside click closes the popover, and keyboard/touch adjustment works on desktop
+and mobile. Levels change immediately, including during repeat playback,
 without restarting the pass or applying pending note edits early. Zero silences
 that track while its toggle remains on. Toggling tracks, changing SOURCE and
 repeating retain the chosen levels for the current session. Separate Web Audio

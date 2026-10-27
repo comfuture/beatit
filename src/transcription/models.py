@@ -15,7 +15,7 @@ class Options(BaseModel):
     renderer: Literal["auto", "musescore", "verovio"] = "auto"
     source: Literal["mix", "drums"] = "mix"
     sensitivity: float = Field(default=1, ge=0.5, le=1.5)
-    tom_refinement: bool = False
+    tom_refinement: bool = True
 
     @model_validator(mode="after")
     def validate_grid(self):

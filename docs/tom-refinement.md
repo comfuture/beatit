@@ -1,6 +1,7 @@
 # 탐 높이 후처리
 
-`Options.tom_refinement`는 기본값이 `false`인 선택적 후처리입니다. 검출 완료 후
+`Options.tom_refinement`는 기본값이 `true`인 후처리입니다. 웹에서는 새 분석과 악보 재생성에
+항상 적용하며 별도 스위치를 표시하지 않습니다. 검출 완료 후
 `make_score`가 호출하며 저장된 `stem-toms.flac`과 `stem-kick.flac`을 사용합니다.
 기존 ADTOF 모델과 타격 시점은 그대로 유지합니다. 별도 모델 다운로드나 추가 의존성은 없습니다.
 
@@ -22,7 +23,8 @@
 
 ## 출력과 취소
 
-자동 보정 이벤트에는 `tom_source_pitch: 47`과 `tom_match_score`를 기록합니다. 옵션을 끄면
+자동 보정 이벤트에는 `tom_source_pitch: 47`과 `tom_match_score`를 기록합니다. API에서 명시적으로
+`tom_refinement: false`를 전달하면
 이 태그가 있는 이벤트만 원래 탐으로 되돌립니다. 태그 없이 수동 입력한 45/50 이벤트는 유지합니다.
 원시 검출 이벤트 파일과 이전 렌더링 세대도 보존됩니다. MusicXML에서는 서로 다른 보표 위치를,
 MIDI에서는 GM 45/50을 사용합니다. 미분류 탐 47도 별도 위치로 표시합니다.

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { SplitterItem } from "@nuxt/ui";
-import { kit, statusLabels } from "~/types/studio";
-import { formatTime } from "~/utils/rhythm";
+import { statusLabels } from "~/types/studio";
 import { colabConnectionUnavailable, isColabExecution, runtimeStatus } from "~/utils/execution";
 
 const studio = useStudio();
@@ -39,6 +38,14 @@ const runtimeConnected = computed(() => {
 });
 const sidebarOpen = ref(true);
 const inspectorOpen = ref(false);
+const sessionBrowserOpen = ref(false);
+const selectedJobId = ref<string | null>(null);
+const sessionInfoPopoverContent = {
+  side: "right" as const,
+  align: "start" as const,
+  collisionPadding: 12,
+  "aria-label": "세션 정보",
+};
 const search = ref("");
 const view = ref("edit");
 const position = ref(0);
@@ -139,15 +146,6 @@ const exportItems = computed(() => [
       : []),
   ],
 ]);
-const instrumentCounts = computed(() =>
-  kit.map((instrument) => ({
-    ...instrument,
-    count: events.value.filter((e) => e.pitch === instrument.pitch).length,
-  })),
-);
-const maximumCount = computed(() =>
-  Math.max(1, ...instrumentCounts.value.map((k) => k.count)),
-);
 function navigate(action: () => void) {
   if (uploading.value || mutating.value) return;
   if (dirty.value) {
@@ -161,6 +159,17 @@ function openJob(id: string) {
     position.value = 0;
     if (compact.value) sidebarOpen.value = false;
   });
+}
+function browseSessions() {
+  search.value = "";
+  selectedJobId.value = current.value?.id || null;
+  if (compact.value) sidebarOpen.value = false;
+  sessionBrowserOpen.value = true;
+}
+function loadSession() {
+  if (!selectedJobId.value || !filteredJobs.value.some((job) => job.id === selectedJobId.value)) return;
+  sessionBrowserOpen.value = false;
+  openJob(selectedJobId.value);
 }
 function newSession() {
   navigate(() => {
@@ -225,8 +234,7 @@ onBeforeUnmount(() => {
     <div class="studio-shell">
       <USidebar
         v-model:open="sidebarOpen"
-        title="세션 브라우저"
-        description="저장된 오디오 작업"
+        title="워크스페이스"
         collapsible="icon"
         rail
         :style="{ '--sidebar-width': '244px', '--sidebar-width-icon': '56px' }"
@@ -251,77 +259,49 @@ onBeforeUnmount(() => {
           <div class="sidebar-top">
             <UButton
               icon="i-lucide-plus"
-              :label="state === 'expanded' ? '새 세션' : undefined"
-              aria-label="새 세션"
+              :label="state === 'expanded' ? '새로 만들기' : undefined"
+              aria-label="새로 만들기"
               :block="state === 'expanded'"
               color="neutral"
               variant="outline"
               :disabled="uploading || mutating"
               @click="newSession"
             />
+            <UButton
+              icon="i-lucide-folder-open"
+              :label="state === 'expanded' ? '불러오기' : undefined"
+              aria-label="불러오기"
+              :block="state === 'expanded'"
+              color="neutral"
+              variant="ghost"
+              :disabled="uploading || mutating"
+              @click="browseSessions"
+            />
           </div>
-          <template v-if="state === 'expanded'">
-            <div class="session-heading">
-              <span>세션 브라우저</span
-              ><UBadge color="neutral" variant="soft" size="xs">{{
-                jobs.length
-              }}</UBadge>
+          <template v-if="result">
+            <div v-if="state === 'expanded'" class="sidebar-session-info">
+              <SessionInfo :result="result" :event-count="events.length" :dirty="dirty" />
+              <SessionStatistics :events="events" />
             </div>
-            <div class="session-search">
-              <UInput
-                v-model="search"
-                icon="i-lucide-search"
-                placeholder="세션 검색"
-                aria-label="세션 검색"
-                size="sm"
-                class="w-full"
+            <UPopover
+              v-else
+              :content="sessionInfoPopoverContent"
+              arrow
+            >
+              <UButton
+                icon="i-lucide-info"
+                aria-label="세션 정보"
+                color="neutral"
+                variant="ghost"
+                class="sidebar-info-button"
               />
-            </div>
-            <div class="sessions">
-              <div v-if="loading" class="p-4 space-y-4">
-                <USkeleton class="h-10" /><USkeleton class="h-10" /><USkeleton
-                  class="h-10"
-                />
-              </div>
-              <p v-else-if="!filteredJobs.length" class="session-empty">
-                {{
-                  search
-                    ? "검색 결과가 없습니다."
-                    : "아직 저장된 세션이 없습니다."
-                }}
-              </p>
-              <button
-                v-for="job in filteredJobs"
-                :key="job.id"
-                class="session-item"
-                :class="{ selected: job.id === current?.id }"
-                :aria-current="job.id === current?.id ? 'true' : undefined"
-                :disabled="uploading || mutating"
-                :title="job.filename"
-                @click="openJob(job.id)"
-              >
-                <span class="session-file-icon"
-                  ><UIcon name="i-lucide-file-audio" /></span
-                ><span class="session-info"
-                  ><strong>{{ job.filename.replace(/\.[^.]+$/, "") }}</strong
-                  ><small
-                    ><i class="status-dot" :class="job.status" />{{
-                      statusLabels[job.status]
-                    }}<span>{{
-                      new Date(job.created * 1000).toLocaleDateString("ko-KR", {
-                        month: "2-digit",
-                        day: "2-digit",
-                      })
-                    }}</span></small
-                  ></span
-                >
-              </button>
-            </div>
-            <div class="sidebar-guide">
-              <span class="eyebrow">{{ colabExecution ? "YOUR DRUM WORKSPACE" : "YOUR LOCAL WORKSPACE" }}</span>
-              <p>소리에서 리듬으로.<br />검토하고, 다듬고, 연주하세요.</p>
-              <span class="sidebar-guide-line" />
-            </div>
+              <template #content>
+                <div class="session-info-popover">
+                  <SessionInfo :result="result" :event-count="events.length" :dirty="dirty" />
+                  <SessionStatistics :events="events" />
+                </div>
+              </template>
+            </UPopover>
           </template>
         </template>
         <template #footer="{ state }"
@@ -368,7 +348,7 @@ onBeforeUnmount(() => {
               icon="i-lucide-panel-left"
               color="neutral"
               variant="ghost"
-              aria-label="세션 브라우저 토글"
+              aria-label="사이드바 토글"
               @click="sidebarOpen = !sidebarOpen"
             /><span class="header-section">워크스페이스</span
             ><UIcon
@@ -605,45 +585,9 @@ onBeforeUnmount(() => {
                 <div class="panel-toolbar">
                   <span
                     ><UIcon name="i-lucide-sliders-horizontal" />
-                    {{ result ? "세션 속성" : "분석 설정" }}</span
-                  ><UIcon name="i-lucide-settings-2" class="text-dimmed" />
+                    {{ result ? "악보 설정" : "분석 설정" }}</span>
                 </div>
                 <div class="inspector-body">
-                  <template v-if="result"
-                    ><div class="section-label">
-                      SESSION INFO
-                      <UBadge size="xs" variant="subtle" color="neutral">{{
-                        dirty ? "수정됨" : "저장됨"
-                      }}</UBadge>
-                    </div>
-                    <div class="session-metrics">
-                      <div>
-                        <strong>{{ result.grid.bpm.toFixed(1) }}</strong
-                        ><span>BPM</span>
-                      </div>
-                      <div>
-                        <strong>{{ result.grid.meter }}</strong
-                        ><span>TIME SIG.</span>
-                      </div>
-                      <div>
-                        <strong>{{ result.grid.bars }}</strong
-                        ><span>BARS</span>
-                      </div>
-                    </div>
-                    <div class="metadata-row">
-                      <span>오디오 길이</span
-                      ><span class="mono">{{
-                        formatTime(result.duration)
-                      }}</span>
-                    </div>
-                    <div class="metadata-row">
-                      <span>전체 타격</span
-                      ><span class="mono">{{
-                        events.length.toLocaleString()
-                      }}</span>
-                    </div>
-                    <USeparator class="my-5"
-                  /></template>
                   <template v-if="result">
                     <ScoreMetadataFields
                       v-model="metadata"
@@ -653,9 +597,6 @@ onBeforeUnmount(() => {
                     />
                     <USeparator class="my-5" />
                   </template>
-                  <div class="section-label">
-                    {{ result ? "SCORE SETTINGS" : "TRANSCRIPTION" }}
-                  </div>
                   <SessionOptions
                     v-if="result"
                     v-model="revision"
@@ -668,27 +609,7 @@ onBeforeUnmount(() => {
                     :system="system"
                     :disabled="busy || !!current"
                   />
-                  <template v-if="result"
-                    ><USeparator class="my-5" />
-                    <div class="section-label">
-                      DETECTED INSTRUMENTS <span>{{ events.length }}</span>
-                    </div>
-                    <div class="kit-counts">
-                      <div
-                        v-for="instrument in instrumentCounts"
-                        :key="instrument.pitch"
-                        class="kit-count"
-                        :style="{ '--track-color': instrument.color }"
-                      >
-                        <span><i />{{ instrument.name }}</span
-                        ><b class="mono">{{ instrument.count }}</b>
-                        <div
-                          :style="{
-                            width: `${(instrument.count / maximumCount) * 100}%`,
-                          }"
-                        />
-                      </div>
-                    </div>
+                  <template v-if="result">
                     <UCollapsible
                       v-if="result.warnings.length"
                       class="review-notes"
@@ -724,12 +645,16 @@ onBeforeUnmount(() => {
                       color="neutral"
                       variant="ghost"
                       size="xs"
-                    /><UButton
+                    />
+                  </div>
+                  <div v-if="current" class="inspector-danger-zone">
+                    <UButton
                       label="세션 삭제"
                       icon="i-lucide-trash-2"
-                      color="neutral"
-                      variant="ghost"
+                      color="error"
+                      variant="soft"
                       size="xs"
+                      block
                       :disabled="busy"
                       @click="deleteOpen = true"
                     />
@@ -767,10 +692,67 @@ onBeforeUnmount(() => {
         </footer>
       </main>
     </div>
+    <UModal
+      v-model:open="sessionBrowserOpen"
+      title="불러오기"
+      :ui="{ content: 'sm:max-w-2xl', body: 'p-0 sm:p-0', footer: 'justify-end' }"
+    >
+      <template #body>
+        <div class="session-search">
+          <UInput
+            v-model="search"
+            icon="i-lucide-search"
+            placeholder="세션 검색"
+            aria-label="세션 검색"
+            class="w-full"
+            autofocus
+          />
+        </div>
+        <div class="session-list-heading" aria-hidden="true">
+          <span>이름</span><span>상태</span><span>수정일</span>
+        </div>
+        <div class="sessions" aria-label="저장된 세션">
+          <div v-if="loading" class="p-4 space-y-4">
+            <USkeleton class="h-10" /><USkeleton class="h-10" />
+          </div>
+          <p v-else-if="!filteredJobs.length" class="session-empty">
+            {{ search ? "검색 결과가 없습니다." : "저장된 세션이 없습니다." }}
+          </p>
+          <button
+            v-for="job in filteredJobs"
+            :key="job.id"
+            class="session-item"
+            :class="{ selected: job.id === selectedJobId }"
+            :aria-pressed="job.id === selectedJobId"
+            :disabled="uploading || mutating"
+            :title="job.filename"
+            @click="selectedJobId = job.id"
+            @dblclick="loadSession"
+            @keydown.enter.prevent="selectedJobId = job.id; loadSession()"
+          >
+            <span class="session-filename">
+              <UIcon name="i-lucide-file-audio" /><strong>{{ job.filename }}</strong>
+            </span>
+            <span class="session-status"><i class="status-dot" :class="job.status" />{{ statusLabels[job.status] }}</span>
+            <time class="session-date" :datetime="new Date(job.updated * 1000).toISOString()">{{
+              new Date(job.updated * 1000).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })
+            }}</time>
+          </button>
+        </div>
+      </template>
+      <template #footer>
+        <UButton label="취소" color="neutral" variant="outline" @click="sessionBrowserOpen = false" />
+        <UButton
+          label="불러오기"
+          icon="i-lucide-folder-open"
+          :disabled="uploading || mutating || !filteredJobs.some((job) => job.id === selectedJobId)"
+          @click="loadSession"
+        />
+      </template>
+    </UModal>
     <USlideover
       v-model:open="inspectorOpen"
-      title="세션 속성"
-      description="악보 정보, 템포, 박자 및 채보 설정"
+      title="악보 설정"
       ><template #body
         ><template v-if="result">
           <ScoreMetadataFields
@@ -814,11 +796,15 @@ onBeforeUnmount(() => {
             target="_blank"
             color="neutral"
             variant="ghost"
-          /><UButton
+          />
+        </div>
+        <div v-if="current" class="inspector-danger-zone">
+          <UButton
             label="세션 삭제"
             icon="i-lucide-trash-2"
             color="error"
-            variant="ghost"
+            variant="soft"
+            block
             :disabled="busy"
             @click="deleteOpen = true"
           /></div></template
@@ -872,32 +858,22 @@ onBeforeUnmount(() => {
     <UModal
       v-model:open="helpOpen"
       title="Beatit Studio"
-      description="오디오에서 편집 가능한 드럼 악보까지."
       ><template #body
         ><div class="help-content">
           <p>
-            새 세션에서 원본을 가져온 후 분석을 시작하세요. 완료되면 원음과 드럼
-            스템을 비교하면서 비트와 악보를 검토할 수 있습니다.
-          </p>
-          <p>
-            비트 셀을 클릭하면 타격이 추가되거나 삭제됩니다. 템포·박자·첫 마디는
-            속성 패널에서 조정하고 <strong>악보 재생성</strong>으로 저장하세요.
+            오디오와 비디오의 드럼을 분석하고, 원음과 비교하며 비트와 악보를
+            다듬는 작업 공간입니다.
           </p>
           <dl>
             <dt>재생 / 정지</dt>
-            <dd><UKbd>space</UKbd></dd>
-            <dt>저장 및 악보 재생성</dt>
-            <dd><UKbd>meta</UKbd> <UKbd>S</UKbd></dd>
+            <dd><UKbd value="space" /></dd>
+            <dt>악보 재생성</dt>
+            <dd><UKbd value="meta" /><UKbd value="S" /></dd>
             <dt>실행 취소</dt>
-            <dd><UKbd>meta</UKbd> <UKbd>Z</UKbd></dd>
+            <dd><UKbd value="meta" /><UKbd value="Z" /></dd>
             <dt>다시 실행</dt>
-            <dd><UKbd>meta</UKbd> <UKbd>shift</UKbd> <UKbd>Z</UKbd></dd>
+            <dd><UKbd value="meta" /><UKbd value="shift" /><UKbd value="Z" /></dd>
           </dl>
-          <p>
-            분석 결과는 편집용 초안입니다. 원음과 비교해 템포와 악기 배치를
-            확인하세요. 직접 권리를 보유하거나 처리 허가를 받은 음원을
-            사용하세요.
-          </p>
         </div></template
       ></UModal
     >

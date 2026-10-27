@@ -129,11 +129,5 @@ function numberValue(value: string | number): number | null {
         </template>
       </UCollapsible>
     </template>
-    <USwitch
-      v-model="model.tom_refinement"
-      label="탐 높이 보정"
-      description="고음·저음 구분 · 실험적 기능"
-      size="sm"
-    />
   </fieldset>
 </template>

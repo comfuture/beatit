@@ -121,7 +121,7 @@ export const defaultOptions = (): Options => ({
   renderer: "auto",
   source: "mix",
   sensitivity: 1,
-  tom_refinement: false,
+  tom_refinement: true,
 });
 export const kit: {
   pitch: Pitch;

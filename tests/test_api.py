@@ -70,7 +70,7 @@ def test_revision_is_queued_and_validates_audio_bounds(tmp_path):
         invalid = {"options": {"bpm": 90}, "events": [{"time": 6, "pitch": 35}]}
         assert client.post(f"/api/jobs/{identifier}/score", json=invalid).status_code == 422
         valid = {
-            "options": {"bpm": 90, "tom_refinement": True},
+            "options": {"bpm": 90},
             "events": [
                 {"time": 1, "pitch": 38},
                 {"time": 2, "pitch": 45, "tom_source_pitch": 47, "tom_match_score": 0.95},
