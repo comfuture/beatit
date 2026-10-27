@@ -57,7 +57,8 @@ The inspector keeps score headings and rhythm settings visible. The left sidebar
 shows the saved tempo, meter, bar count and duration alongside the current draft's
 total hit count. Its **통계** button opens per-instrument hit counts, also available
 inside the collapsed information popover. In the editor, the bottom-right **?**
-popover contains cell shortcuts and new-hit velocity. Suspect-beat navigation appears only while reviews are pending;
+popover contains cell shortcuts and new-hit velocity. A yellow suspect-beat button
+appears beside the bar locator only while reviews are pending;
 the grid colors and per-beat reasons carry the review state without a standing banner.
 
 `/api/jobs/{id}/waveform?source=audio.wav` returns at most 1200 amplitude peaks.

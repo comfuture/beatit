@@ -180,17 +180,16 @@ function keyboard(event: KeyboardEvent) {
             variant="ghost"
             @click="emit('seek', Math.max(0, tickTime(barOffset, grid)))"
         /></UTooltip>
+        <UTooltip v-if="pending.length" :text="`다음 의심 박자 · ${pending.length}개`">
+          <UButton
+            aria-label="다음 의심 박자"
+            icon="i-lucide-scan-search"
+            color="warning"
+            variant="soft"
+            @click="nextIssue"
+          />
+        </UTooltip>
       </div>
-      <UButton
-        v-if="pending.length"
-        :label="`확인 ${pending.length}`"
-        aria-label="다음 의심 박자"
-        icon="i-lucide-scan-search"
-        color="warning"
-        variant="soft"
-        size="xs"
-        @click="nextIssue"
-      />
       <div class="editor-playback-controls">
         <UTooltip text="선택한 마디를 재생합니다. 툴바의 구간 반복을 켜면 반복해서 들을 수 있습니다.">
           <UButton
