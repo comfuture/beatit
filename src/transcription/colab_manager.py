@@ -182,7 +182,7 @@ class Manager:
             self.rpc("/v1/attachment?force=true&released=true", method="DELETE")
             self.owned.unlink()
             status = self.rpc("/v1/status")
-        if not current and self.intent.exists():
+        if self.intent.exists():
             self.reconcile_intent()
             current = self.sessions().get(self.name)
         if not current and status.get("allocation_requested"):

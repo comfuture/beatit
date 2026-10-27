@@ -280,6 +280,46 @@ def test_existing_owned_runtime_is_reused_across_manager_restart(managed, tmp_pa
     assert len(transport.attached) == 2
 
 
+def test_restart_recovers_named_allocation_before_ownership_was_written(managed, tmp_path):
+    controller, transport, _ = managed
+    state = tmp_path / "manager"
+    interrupted = FakeManager(state, controller)
+    interrupted.account = session()
+    interrupted.sync()
+    interrupted.intent.write_text(json.dumps({"endpoints_before": []}))
+    assert not interrupted.owned.exists()
+
+    restarted = FakeManager(state, controller)
+    restarted.account = session()
+    restarted.step()
+    assert restarted.count("new") == 0
+    assert restarted.owned_endpoint() == "runtime-endpoint"
+    assert not restarted.intent.exists()
+    assert controller.attached()
+    assert len(transport.attached) == 1
+
+    controller.last_activity -= controller.idle_seconds + 1
+    restarted.step()
+    assert restarted.count("stop") == 1
+    assert not controller.attached()
+    assert not restarted.owned.exists()
+
+
+def test_pending_intent_does_not_adopt_named_runtime_from_the_baseline(managed, tmp_path):
+    controller, transport, _ = managed
+    manager = FakeManager(tmp_path / "manager", controller)
+    manager.account = session()
+    manager.sync()
+    manager.intent.write_text(json.dumps({"endpoints_before": ["runtime-endpoint"]}))
+    with pytest.raises(ManagerFailure, match="cleanup"):
+        manager.step()
+    assert manager.count("new") == 0
+    assert manager.count("stop") == 0
+    assert not manager.owned.exists()
+    assert manager.intent.exists()
+    assert transport.attached == []
+
+
 def test_idle_owned_runtime_is_released_and_release_is_confirmed(managed, tmp_path):
     controller, transport, _ = managed
     manager = FakeManager(tmp_path / "manager", controller)
