@@ -1,5 +1,8 @@
 # chunsik의 수동 연결 Colab 백엔드
 
+2026-10-27 서버 독립 실행 구성은 [서버 전용 인증 문서](colab-server-auth.md)를 참고한다.
+이 문서는 선택 가능한 수동 연결 모드와 최초 배포 검증 기록이다.
+
 [구현 이슈 #8](https://github.com/comfuture/beatit/issues/8)은 멀티유저 전환
 [#7](https://github.com/comfuture/beatit/issues/7)과 별개다. 최초 배포는 계정별 분리가 없는
 기존 개인용 앱을 Tailscale 안에서 사용하며, Google 계정 인증은 로컬 운영자 CLI에 둔다.
