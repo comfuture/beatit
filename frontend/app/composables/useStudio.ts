@@ -11,6 +11,7 @@ import { mergeBeatReview, reviewAfterEdit } from "~/utils/beatReview";
 import { connectionUnavailable, runtimeStatus } from "~/utils/execution";
 import { sessionIdFromPath, sessionPath } from "~/utils/sessionLocation";
 import { actionErrorMessage, isTransientReadError } from "~/utils/connection";
+import { discardUpload, uploadMedia } from "~/utils/upload";
 
 export function useStudio(userId: string, onUnauthorized: () => void) {
   const storageKey = `beatit-session:${userId}`;
@@ -98,7 +99,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   let initialized = false;
   let retrySelection = false;
   const pendingRequests = new Set<AbortController>();
-  let uploadRequest: XMLHttpRequest | undefined;
+  let uploadRequest: AbortController | undefined;
+  let uploadSession: { file: File; options: string; id?: string } | undefined;
   const assertActive = () => {
     if (disposed) throw new DOMException("Workspace closed", "AbortError");
   };
@@ -298,6 +300,10 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       return;
     }
     selectedFile.value = file;
+    if (uploadSession && uploadSession.file !== file) {
+      if (uploadSession.id) void discardUpload(uploadSession.id).catch(() => {});
+      uploadSession = undefined;
+    }
     error.value = "";
   }
   async function upload() {
@@ -316,59 +322,46 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     error.value = "";
     uploadProgress.value = 0;
     try {
-      const form = new FormData();
-      form.append("file", selectedFile.value);
-      form.append("options", JSON.stringify({ ...options.value, tom_refinement: true }));
-      const job = await new Promise<Job>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        uploadRequest = xhr;
-        xhr.onabort = () => reject(new DOMException("Workspace closed", "AbortError"));
-        xhr.open("POST", "/api/jobs");
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable && !disposed)
-            uploadProgress.value = Math.round((e.loaded / e.total) * 100);
-        };
-        xhr.onerror = () =>
-          reject(
-            new Error("파일 전송에 실패했습니다. 서버 연결을 확인하세요."),
-          );
-        xhr.onload = () => {
-          if (disposed) {
-            reject(new DOMException("Workspace closed", "AbortError"));
-            return;
-          }
-          if (xhr.status === 401) {
-            onUnauthorized();
-            reject(new DOMException("Session expired", "AbortError"));
-            return;
-          }
-          try {
-            const data = JSON.parse(xhr.responseText);
-            if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-            else
-              reject(
-                new Error(
-                  typeof data.detail === "string"
-                    ? data.detail
-                    : JSON.stringify(data.detail),
-                ),
-              );
-          } catch {
-            reject(new Error("서버 응답을 읽을 수 없습니다."));
-          }
-        };
-        xhr.send(form);
+      const file = selectedFile.value;
+      const uploadOptions = { ...options.value, tom_refinement: true };
+      const serializedOptions = JSON.stringify(uploadOptions);
+      if (uploadSession?.file !== file || uploadSession.options !== serializedOptions) {
+        if (uploadSession?.id) void discardUpload(uploadSession.id).catch(() => {});
+        uploadSession = { file, options: serializedOptions };
+      }
+      uploadRequest = new AbortController();
+      const job = await uploadMedia(file, uploadOptions, {
+        signal: uploadRequest.signal,
+        sessionId: uploadSession.id,
+        chunkSize: system.value?.upload_chunk_bytes,
+        onSession: (id) => { if (uploadSession) uploadSession.id = id; },
+        onProgress: (percent) => { if (!disposed) uploadProgress.value = percent; },
       });
+      uploadSession = undefined;
       assertActive();
       await selectJob(job.id);
       assertActive();
       selectedFile.value = null;
       await refreshHistory();
     } catch (e) {
-      report(e);
+      if ((e as { status?: number })?.status === 401) onUnauthorized();
+      else if ((e as Error)?.name !== "AbortError") report(e);
     } finally {
       uploadRequest = undefined;
       uploading.value = false;
+    }
+  }
+  async function cancelUpload() {
+    mutating.value = true;
+    uploadRequest?.abort();
+    const session = uploadSession;
+    try {
+      if (session?.id) await discardUpload(session.id);
+      if (uploadSession === session) uploadSession = undefined;
+    } catch (reason) {
+      report(reason);
+    } finally {
+      mutating.value = false;
     }
   }
   async function action(name: "cancel" | "retry" | "delete") {
@@ -580,6 +573,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     sessionLocation,
     chooseFile,
     upload,
+    cancelUpload,
     action,
     editEvents,
     resolveBeat,

@@ -112,6 +112,7 @@ export interface SystemInfo {
   musescore: boolean;
   verovio: boolean;
   max_upload_bytes: number;
+  upload_chunk_bytes?: number;
   max_duration_seconds: number;
 }
 export const defaultOptions = (): Options => ({

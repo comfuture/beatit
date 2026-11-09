@@ -83,7 +83,7 @@ def test_redaction_survives_uvicorn_configuration_after_app_construction(access_
 
 
 def test_create_app_installs_redaction_without_touching_the_oauth_request(
-    access_logger, monkeypatch
+    access_logger, monkeypatch, tmp_path
 ):
     from fastapi import Request
     from fastapi.testclient import TestClient
@@ -98,7 +98,7 @@ def test_create_app_installs_redaction_without_touching_the_oauth_request(
             return {"code": request.query_params["code"], "state": request.query_params["state"]}
 
     monkeypatch.setattr(application, "install_auth", auth_routes)
-    app = application.create_app(start_worker=False, store=SimpleNamespace(db=None))
+    app = application.create_app(start_worker=False, store=SimpleNamespace(root=tmp_path, db=None))
     output = capture(access_logger)
     client = TestClient(app)
     response = client.get("/api/auth/callback?code=original-code&state=original-state")
