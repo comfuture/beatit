@@ -16,6 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .access_log import install_auth_query_redaction
 from .auth import install_auth, require_user
 from .execution import default_engine, execution_capabilities
 from .models import Options, Revision, ScoreMetadata
@@ -68,6 +69,7 @@ class ProjectInput(BaseModel):
 def create_app(
     data_root: Path | None = None, start_worker: bool = True, *, store=None, auth_service=None
 ) -> FastAPI:
+    install_auth_query_redaction()
     store = store or JobStore(data_root or Path(os.environ.get("DRUM_DATA_DIR", "data")))
 
     @asynccontextmanager
