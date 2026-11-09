@@ -104,6 +104,23 @@ jobs per owner (`BEATIT_MAX_PENDING_PER_USER`). `BEATIT_LEASE_SECONDS` defaults 
 90 seconds. Different jobs may create private local scratch concurrently, but
 only the leased worker may run inference.
 
+## Private playback delivery
+
+The optional [private media Worker](media-delivery.md) serves playback bytes from
+R2 directly to the browser after a fresh same-origin API session/owner/manifest
+check for every GET, HEAD or range request. The bucket stays private; there are no
+signed bearer URLs or authorization caches. Logout revokes subsequent requests,
+while already delivered or in-flight bytes cannot be recalled.
+
+`BEATIT_MEDIA_BASE_URL` defaults to the authenticated API relay; `/media` is the
+only enabled Worker value. The relay/waveform cache uses per-object download locks
+so independent cold reads do not hold the global job lock. The player preloads
+media and reports buffering while holding/resuming the matching drum clock. The
+media document records range behavior, deployment/rollback, and the short-sample
+cold/warm diagnostic limits. These source changes require their own application
+and Worker deployment evidence; the earlier `dcef260` checkpoint above does not
+establish their rollout.
+
 ## Prepare the environment
 
 1. Create a dedicated database (for example `beatit`) and a dedicated app user on

@@ -14,7 +14,9 @@ from transcription.auth import (
     AuthService,
     AuthSettings,
     install_auth,
+    login_return_path,
     require_user,
+    state_return_path,
     token_hash,
 )
 
@@ -107,6 +109,32 @@ def test_localhost_uses_separate_development_cookie(monkeypatch):
     assert not settings.secure
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://attacker.example/",
+        "//attacker.example/",
+        "/\\attacker.example",
+        "/api/auth/logout",
+        "/sessions/" + "a" * 31,
+        "/sessions/" + "A" * 32,
+        "/sessions/" + "a" * 32 + "?next=https://attacker.example",
+        "/sessions/" + "a" * 32 + "/../other",
+    ],
+)
+def test_login_return_target_rejects_external_and_noncanonical_paths(target):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as error:
+        login_return_path(target)
+    assert error.value.status_code == 400
+
+
+def test_legacy_oauth_state_returns_to_workspace():
+    assert state_return_path("legacy-random-state") == "/"
+    assert state_return_path("random.https://attacker.example") == "/"
+
+
 def test_session_identity_is_stable_revocable_and_not_an_email_key(service):
     claims = identity()
     token, first = service.create_session(claims)
@@ -188,7 +216,8 @@ def test_login_state_is_browser_bound_single_use_and_pkce_protected(service, mon
         )
 
 
-def test_oauth_state_expiry_and_cancelled_login(service, monkeypatch):
+@pytest.mark.parametrize("target", ["/", "/sessions/" + "a" * 32])
+def test_oauth_state_expiry_and_cancelled_login(service, monkeypatch, target):
     service._save_state("expired", "browser", "verifier", "nonce")
     with service.db.connection() as connection:
         connection.execute(
@@ -198,7 +227,9 @@ def test_oauth_state_expiry_and_cancelled_login(service, monkeypatch):
     assert service._consume_state("expired", "browser") is None
     monkeypatch.setattr(service, "_metadata", google_metadata)
     with TestClient(auth_app(service), base_url="https://beatit.example.test") as client:
-        response = client.get("/api/auth/google", follow_redirects=False)
+        response = client.get(
+            "/api/auth/google", params={"return_to": target}, follow_redirects=False
+        )
         state = parse_qs(urlsplit(response.headers["location"]).query)["state"][0]
         response = client.get(
             "/api/auth/callback",
@@ -206,7 +237,10 @@ def test_oauth_state_expiry_and_cancelled_login(service, monkeypatch):
             follow_redirects=False,
         )
         assert response.status_code == 303
-        assert response.headers["location"].endswith("/?auth_error=cancelled")
+        assert (
+            response.headers["location"]
+            == service.settings.public_url + target + "?auth_error=cancelled"
+        )
         assert client.get("/api/auth/me").json()["user"] is None
 
 
@@ -243,8 +277,9 @@ def test_google_claim_validation_rejects_invalid_identity(
         asyncio.run(service.validate_id_token(encoded, "expected-nonce"))
 
 
+@pytest.mark.parametrize("target", ["/", "/sessions/" + "a" * 32])
 def test_google_callback_validates_signed_token_and_rotates_session(
-    service, signing_key, monkeypatch
+    service, signing_key, monkeypatch, target
 ):
     from authlib.integrations.httpx_client import AsyncOAuth2Client
 
@@ -273,16 +308,31 @@ def test_google_callback_validates_signed_token_and_rotates_session(
     old_token, _ = service.create_session(identity())
     with TestClient(auth_app(service), base_url="https://beatit.example.test") as client:
         client.cookies.set(service.settings.cookie_name, old_token)
-        response = client.get("/api/auth/google", follow_redirects=False)
+        response = client.get(
+            "/api/auth/google", params={"return_to": target}, follow_redirects=False
+        )
         query = parse_qs(urlsplit(response.headers["location"]).query)
         callback_nonce = query["nonce"][0]
+        if target != "/":
+            # Editing the target suffix invalidates the original state hash.
+            tampered = query["state"][0].rsplit(".", 1)[0] + "." + "b" * 32
+            assert (
+                client.get(
+                    "/api/auth/callback", params={"code": "test-code", "state": tampered}
+                ).status_code
+                == 400
+            )
         response = client.get(
             "/api/auth/callback",
-            params={"code": "test-code", "state": query["state"][0]},
+            params={
+                "code": "test-code",
+                "state": query["state"][0],
+                "return_to": "https://attacker.example",
+            },
             follow_redirects=False,
         )
         assert response.status_code == 303
-        assert response.headers["location"] == service.settings.public_url + "/"
+        assert response.headers["location"] == service.settings.public_url + target
         assert "HttpOnly" in response.headers["set-cookie"]
         assert service.current_user(cookie_request(service, old_token)) is None
         assert client.get("/api/auth/me").json()["user"]["email"] == "owner@example.test"

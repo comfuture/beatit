@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import type { SignedInUser } from "~/types/auth";
+import { googleLoginPath } from "~/utils/sessionLocation";
 
 const user = shallowRef<SignedInUser | null>(null);
 const checking = ref(true);
+const locationPath = ref("/");
+const loginPath = computed(() => googleLoginPath(locationPath.value));
+function updateLocation() { locationPath.value = window.location.pathname; }
 const signingOut = ref(false);
 const authError = ref("");
 type LogoutNotice = {
@@ -139,6 +143,9 @@ function onFocus() {
   void checkSession();
 }
 onMounted(() => {
+  updateLocation();
+  window.addEventListener("popstate", updateLocation);
+  window.addEventListener("beatit-location-change", updateLocation);
   localStorage.removeItem("beatit-session");
   const params = new URLSearchParams(location.search);
   if (params.get("auth_error") === "cancelled") {
@@ -155,6 +162,8 @@ onBeforeUnmount(() => {
   revision++;
   pending?.abort();
   clearTimeout(timer);
+  window.removeEventListener("popstate", updateLocation);
+  window.removeEventListener("beatit-location-change", updateLocation);
   window.removeEventListener("focus", onFocus);
   window.removeEventListener("storage", onStorage);
   window.removeEventListener("beatit-session-expired", expireSession);
@@ -199,7 +208,7 @@ onBeforeUnmount(() => {
             <UButton
               label="Google로 시작하기"
               icon="i-lucide-log-in"
-              href="/api/auth/google"
+              :href="loginPath"
               external
               size="lg"
               block

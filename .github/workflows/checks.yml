@@ -1,6 +1,21 @@
 name: Checks
 on: [push, pull_request]
 jobs:
+  media-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare/media
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: cloudflare/media/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npx wrangler deploy --dry-run --outdir .wrangler/dry-run
   frontend:
     runs-on: ubuntu-latest
     defaults:
