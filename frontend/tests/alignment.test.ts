@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alignmentGrid, canonicalAlignment, resolvedRevision, shiftFirstBar } from "../app/utils/alignment";
+import { alignmentGrid, canonicalAlignment, resolvedRevision, scoreRevisionTiming, shiftFirstBar } from "../app/utils/alignment";
 import { defaultOptions } from "../app/types/studio";
 import { playbackBar } from "../app/utils/rhythm";
 
@@ -61,6 +61,22 @@ describe("quarter-note first-bar corrections", () => {
     expect(resolvedRevision(result)).toEqual({ ...options, bpm: 137.3, offset: -0.23 });
     expect(result.options.bpm).toBeNull();
     expect(resolvedRevision({ ...result, options: { ...options, bpm: NaN } }).bpm).toBeNaN();
+  });
+  it.each([
+    { bpm: 120, offset: null }, { bpm: null, offset: 0.25 }, { bpm: null, offset: null },
+  ])("keeps automatic timing %j for analysis instead of explicit preservation", (automatic) => {
+    const draft = { ...options, ...automatic, tom_refinement: false };
+    const saved = scoreRevisionTiming(draft, true, 0);
+    expect(saved.preserveEvents).toBe(false);
+    expect(saved.options).toMatchObject({ ...automatic, tom_refinement: true });
+    expect(draft).toEqual({ ...options, ...automatic, tom_refinement: false });
+  });
+  it("canonicalizes only explicit alignment drafts and retains their refinement option", () => {
+    const explicit = { ...options, offset: 0.25, tom_refinement: false };
+    expect(scoreRevisionTiming(explicit, true, 0)).toEqual({ preserveEvents: true,
+      options: { ...explicit, offset: -1.75 } });
+    expect(scoreRevisionTiming(explicit, false, 0)).toEqual({ preserveEvents: false,
+      options: { ...explicit, tom_refinement: true } });
   });
   it("includes the terminal quantized bar when recomputing draft review hints", () => {
     const events = [{ time: 1.99, pitch: 35 as const, strength: 0.8 }];

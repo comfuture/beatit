@@ -39,6 +39,15 @@ export function canonicalAlignment(options: Pick<Options, "bpm" | "offset" | "me
   return { offset: Object.is(offset, -0) ? 0 : offset, pickupBars };
 }
 
+/** Automatic timing resolves through analysis; only explicit corrections are canonicalized. */
+export function scoreRevisionTiming(options: Options, alignmentChanged: boolean, firstHit: number | null) {
+  validateOptions(options);
+  const preserveEvents = alignmentChanged && options.bpm !== null && options.offset !== null;
+  return { preserveEvents, options: preserveEvents
+    ? { ...options, offset: canonicalAlignment(options, firstHit).offset }
+    : { ...options, tom_refinement: true } };
+}
+
 /** Recheck review hints for the draft without replacing the published display grid. */
 export function alignmentGrid(options: Options, duration: number, events: DrumEvent[] = []): Grid {
   const timing = resolvedTiming(options);
