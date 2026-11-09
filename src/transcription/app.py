@@ -1,15 +1,22 @@
 import os
 import shutil
+import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from boto3.exceptions import Boto3Error
+from botocore.exceptions import BotoCoreError, ClientError
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from pymysql import Error as DatabaseError
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .auth import install_auth, require_user
 from .execution import default_engine, execution_capabilities
 from .models import Options, Revision, ScoreMetadata
 from .pipeline import MAX_DURATION, save_json
@@ -49,19 +56,34 @@ JOB_AUDIO = {"audio.wav", "drums.wav"} | {
 STATIC = Path(__file__).parent / "static" / "web"
 
 
-def create_app(data_root: Path | None = None, start_worker: bool = True) -> FastAPI:
-    store = JobStore(data_root or Path(os.environ.get("DRUM_DATA_DIR", "data")))
+class ProjectInput(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def trim_name(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
+def create_app(
+    data_root: Path | None = None, start_worker: bool = True, *, store=None, auth_service=None
+) -> FastAPI:
+    store = store or JobStore(data_root or Path(os.environ.get("DRUM_DATA_DIR", "data")))
 
     @asynccontextmanager
     async def lifespan(app):
         if start_worker:
             store.start()
-        yield
-        if start_worker:
-            store.stop()
+        try:
+            yield
+        finally:
+            if start_worker:
+                store.stop()
+            store.close()
 
     app = FastAPI(title="Drum Score", lifespan=lifespan)
     app.state.store = store
+    install_auth(app, store.db, service=auth_service)
     app.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"]
@@ -70,28 +92,58 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
 
     @app.middleware("http")
     async def local_origin(request: Request, call_next):
-        # Prevent another web site from submitting local jobs via a browser form.
         origin = request.headers.get("origin")
-        if (
-            request.method in {"POST", "PUT", "PATCH", "DELETE"}
-            and origin
-            and origin != str(request.base_url).rstrip("/")
+        expected_origin = os.environ.get("BEATIT_PUBLIC_URL", str(request.base_url)).rstrip("/")
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and (
+            (origin and origin != expected_origin)
+            or request.headers.get("sec-fetch-site") == "cross-site"
         ):
             raise_error = PlainTextResponse("Cross-origin requests are disabled", status_code=403)
             return raise_error
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "private, no-store"
         return response
 
-    def get_job(identifier: str):
+    async def unavailable(request, error):
+        return JSONResponse(
+            {"detail": "저장소에 연결할 수 없습니다. 잠시 후 다시 시도하세요."},
+            status_code=503,
+            headers={"Retry-After": "5"},
+        )
+
+    for exception in (
+        DatabaseError,
+        SQLAlchemyError,
+        Boto3Error,
+        BotoCoreError,
+        ClientError,
+        OSError,
+    ):
+        app.add_exception_handler(exception, unavailable)
+
+    def get_job(identifier: str, user: dict):
         try:
-            return store.get(identifier)
+            return store.get(identifier, owner_id=user["id"])
         except KeyError:
             raise HTTPException(404, "작업을 찾을 수 없습니다.") from None
 
+    def artifact_path(identifier, relative, user):
+        try:
+            return store.file_path(identifier, relative, owner_id=user["id"])
+        except KeyError:
+            raise HTTPException(404, "파일이 없습니다.") from None
+
+    @app.get("/api/health")
+    def health():
+        with store.connect() as connection:
+            connection.execute("SELECT 1")
+        return {"status": "ok"}
+
     @app.get("/api/system")
-    def system():
+    def system(user: dict = Depends(require_user)):
         return {
             **execution_capabilities(capabilities()),
             "max_upload_bytes": upload_limit(),
@@ -99,11 +151,38 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
         }
 
     @app.get("/api/jobs")
-    def list_jobs():
-        return store.list()
+    def list_jobs(q: str = "", project_id: str | None = None, user: dict = Depends(require_user)):
+        if project_id:
+            get_project(project_id, user)
+        return store.list(owner_id=user["id"], query=q, project_id=project_id)
+
+    def get_project(identifier: str, user: dict):
+        try:
+            return store.get_project(identifier, owner_id=user["id"])
+        except KeyError:
+            raise HTTPException(404, "프로젝트를 찾을 수 없습니다.") from None
+
+    @app.get("/api/projects")
+    def projects(q: str = "", user: dict = Depends(require_user)):
+        return store.list_projects(owner_id=user["id"], query=q)
+
+    @app.post("/api/projects", status_code=201)
+    def create_project(project: ProjectInput, user: dict = Depends(require_user)):
+        return store.create_project(owner_id=user["id"], name=project.name.strip())
+
+    @app.get("/api/projects/{identifier}")
+    def project(identifier: str, user: dict = Depends(require_user)):
+        return get_project(identifier, user)
 
     @app.post("/api/jobs", status_code=202)
-    async def upload(file: UploadFile = File(...), options: str = Form("{}")):
+    async def upload(
+        file: UploadFile = File(...),
+        options: str = Form("{}"),
+        project_id: str | None = Form(None),
+        user: dict = Depends(require_user),
+    ):
+        if project_id:
+            await run_in_threadpool(get_project, project_id, user)
         filename = (file.filename or "media").replace("\\", "/").rsplit("/", 1)[-1][:200]
         if Path(filename).suffix.lower() not in EXTENSIONS:
             raise HTTPException(
@@ -144,36 +223,41 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
                 directory / "request.json",
                 {"filename": filename, "options": parsed.model_dump()},
             )
-            store.add(identifier, filename)
+            try:
+                await run_in_threadpool(
+                    store.add, identifier, filename, owner_id=user["id"], project_id=project_id
+                )
+            except ValueError as error:
+                raise HTTPException(429, str(error)) from None
         except BaseException:
             shutil.rmtree(directory, ignore_errors=True)
             raise
         finally:
             await file.close()
-        return get_job(identifier)
+        return await run_in_threadpool(get_job, identifier, user)
 
     @app.get("/api/jobs/{identifier}")
-    def job(identifier: str):
-        return get_job(identifier)
+    def job(identifier: str, user: dict = Depends(require_user)):
+        return get_job(identifier, user)
 
     @app.post("/api/jobs/{identifier}/cancel")
-    def cancel(identifier: str):
-        get_job(identifier)
-        store.cancel(identifier)
-        return get_job(identifier)
+    def cancel(identifier: str, user: dict = Depends(require_user)):
+        get_job(identifier, user)
+        store.cancel(identifier, owner_id=user["id"])
+        return get_job(identifier, user)
 
     @app.post("/api/jobs/{identifier}/retry", status_code=202)
-    def retry(identifier: str):
-        get_job(identifier)
+    def retry(identifier: str, user: dict = Depends(require_user)):
+        get_job(identifier, user)
         try:
-            store.retry(identifier)
+            store.retry(identifier, owner_id=user["id"])
         except ValueError as error:
             raise HTTPException(409, str(error)) from None
-        return get_job(identifier)
+        return get_job(identifier, user)
 
     @app.post("/api/jobs/{identifier}/score", status_code=202)
-    def revise(identifier: str, revision: Revision):
-        existing = get_job(identifier)
+    def revise(identifier: str, revision: Revision, user: dict = Depends(require_user)):
+        existing = get_job(identifier, user)
         if revision.events is not None:
             duration = existing.get("result", {}).get("duration", 0)
             if any(event.time >= duration for event in revision.events):
@@ -187,41 +271,40 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
                 beat_review=revision.beat_review.model_dump()
                 if revision.beat_review is not None
                 else None,
+                owner_id=user["id"],
             )
         except ValueError as error:
             raise HTTPException(409, str(error)) from None
-        return get_job(identifier)
+        return get_job(identifier, user)
 
     @app.post("/api/jobs/{identifier}/score-metadata", status_code=202)
-    def revise_metadata(identifier: str, metadata: ScoreMetadata):
-        get_job(identifier)
+    def revise_metadata(
+        identifier: str, metadata: ScoreMetadata, user: dict = Depends(require_user)
+    ):
+        get_job(identifier, user)
         try:
-            store.revise(identifier, None, metadata=metadata.model_dump())
+            store.revise(identifier, None, metadata=metadata.model_dump(), owner_id=user["id"])
         except ValueError as error:
             raise HTTPException(409, str(error)) from None
-        return get_job(identifier)
+        return get_job(identifier, user)
 
     @app.delete("/api/jobs/{identifier}", status_code=204)
-    def delete(identifier: str):
-        get_job(identifier)
-        store.delete(identifier)
+    def delete(identifier: str, user: dict = Depends(require_user)):
+        get_job(identifier, user)
+        store.delete(identifier, owner_id=user["id"])
 
     @app.get("/api/jobs/{identifier}/log", response_class=PlainTextResponse)
-    def log(identifier: str):
-        get_job(identifier)
-        path = store.directory(identifier) / "worker.log"
-        if not path.is_file():
-            return "아직 로그가 없습니다."
-        with path.open("rb") as file:
-            file.seek(max(0, path.stat().st_size - 64000))
-            return file.read().decode("utf-8", errors="replace")
+    def log(identifier: str, user: dict = Depends(require_user)):
+        get_job(identifier, user)
+        return store.log(identifier, owner_id=user["id"]) or "아직 로그가 없습니다."
 
     @app.get("/api/jobs/{identifier}/files/{filename}")
-    def artifact(identifier: str, filename: str, download: bool = False):
-        job = get_job(identifier)
-        directory = store.directory(identifier)
+    def artifact(
+        identifier: str, filename: str, download: bool = False, user: dict = Depends(require_user)
+    ):
+        job = get_job(identifier, user)
         if filename in JOB_AUDIO:
-            path = directory / filename
+            path = artifact_path(identifier, filename, user)
         else:
             result = job.get("result", {})
             allowed = {
@@ -237,9 +320,7 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
             } | set(result.get("pages", []))
             if filename not in allowed or not result.get("generation"):
                 raise HTTPException(404, "파일이 없습니다.")
-            path = directory / result["generation"] / filename
-        if not path.is_file():
-            raise HTTPException(404, "파일이 없습니다.")
+            path = artifact_path(identifier, f"{result['generation']}/{filename}", user)
         media_type = {
             ".svg": "image/svg+xml",
             ".musicxml": "application/vnd.recordare.musicxml+xml",
@@ -253,26 +334,33 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
         return FileResponse(path, media_type=media_type, filename=path.name if download else None)
 
     @app.get("/api/jobs/{identifier}/score-layout")
-    def layout(identifier: str, generation: str):
-        result = get_job(identifier).get("result")
+    def layout(identifier: str, generation: str, user: dict = Depends(require_user)):
+        result = get_job(identifier, user).get("result")
         if not result:
             raise HTTPException(404, "악보가 준비되지 않았습니다.")
         if generation != result["generation"]:
             raise HTTPException(409, "악보가 변경되었습니다. 다시 불러오세요.")
         try:
-            measures = score_layout(store.directory(identifier) / generation, result)
+            # Cache objects are named by digest; engraving expects original page
+            # names together. Materialize a request-local view from the manifest.
+            with tempfile.TemporaryDirectory(dir=store.root, prefix="layout-") as scratch:
+                directory = Path(scratch)
+                for page in result.get("pages", []):
+                    if Path(page).name != page:
+                        raise ValueError("Invalid score page")
+                    source = artifact_path(identifier, f"{generation}/{page}", user)
+                    (directory / page).symlink_to(source)
+                measures = score_layout(directory, result)
         except (OSError, ValueError):
             measures = []
         return {"generation": generation, "measures": measures}
 
     @app.get("/api/jobs/{identifier}/waveform")
-    def waveform(identifier: str, source: str = "audio.wav"):
-        job = get_job(identifier)
+    def waveform(identifier: str, source: str = "audio.wav", user: dict = Depends(require_user)):
+        job = get_job(identifier, user)
         if source not in JOB_AUDIO or not job.get("result"):
             raise HTTPException(404, "오디오가 준비되지 않았습니다.")
-        path = store.directory(identifier) / source
-        if not path.is_file():
-            raise HTTPException(404, "오디오가 없습니다.")
+        path = artifact_path(identifier, source, user)
         stat = path.stat()
         try:
             return waveform_peaks(str(path), stat.st_mtime_ns, stat.st_size)

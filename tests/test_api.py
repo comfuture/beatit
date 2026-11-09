@@ -1,14 +1,18 @@
 import json
 
 import pytest
-from fastapi.testclient import TestClient
 
-from transcription.app import create_app
+pytestmark = pytest.mark.mysql
 
 
-def test_upload_history_cancel_and_delete(tmp_path, monkeypatch):
+def test_upload_history_cancel_and_delete(
+    tmp_path,
+    monkeypatch,
+    authenticated_app,
+    authenticated_client,
+):
     monkeypatch.setenv("DRUM_EXECUTION_BACKEND", "local")
-    with TestClient(create_app(tmp_path, start_worker=False)) as client:
+    with authenticated_client(authenticated_app(tmp_path)) as client:
         response = client.post(
             "/api/jobs",
             files={"file": ("../../song.wav", b"audio", "audio/wav")},
@@ -27,8 +31,8 @@ def test_upload_history_cancel_and_delete(tmp_path, monkeypatch):
         assert client.get(f"/api/jobs/{identifier}").status_code == 404
 
 
-def test_invalid_inputs_leave_no_orphan_uploads(tmp_path):
-    with TestClient(create_app(tmp_path, start_worker=False)) as client:
+def test_invalid_inputs_leave_no_orphan_uploads(tmp_path, authenticated_app, authenticated_client):
+    with authenticated_client(authenticated_app(tmp_path)) as client:
         assert client.post("/api/jobs", files={"file": ("song.exe", b"x")}).status_code == 415
         assert client.post("/api/jobs", files={"file": ("song.wav", b"")}).status_code == 400
         assert (
@@ -47,8 +51,12 @@ def test_invalid_inputs_leave_no_orphan_uploads(tmp_path):
         assert not any(p.is_dir() for p in tmp_path.iterdir())
 
 
-def test_browser_cross_origin_cannot_submit_local_jobs(tmp_path):
-    with TestClient(create_app(tmp_path, start_worker=False)) as client:
+def test_browser_cross_origin_cannot_submit_local_jobs(
+    tmp_path,
+    authenticated_app,
+    authenticated_client,
+):
+    with authenticated_client(authenticated_app(tmp_path)) as client:
         response = client.post(
             "/api/jobs",
             headers={"origin": "https://example.com"},
@@ -58,9 +66,13 @@ def test_browser_cross_origin_cannot_submit_local_jobs(tmp_path):
         assert client.get("/api/jobs").json() == []
 
 
-def test_revision_is_queued_and_validates_audio_bounds(tmp_path):
-    app = create_app(tmp_path, start_worker=False)
-    with TestClient(app) as client:
+def test_revision_is_queued_and_validates_audio_bounds(
+    tmp_path,
+    authenticated_app,
+    authenticated_client,
+):
+    app = authenticated_app(tmp_path)
+    with authenticated_client(app) as client:
         job = client.post("/api/jobs", files={"file": ("song.wav", b"x")}).json()
         identifier = job["id"]
         directory = tmp_path / identifier
@@ -87,9 +99,13 @@ def test_revision_is_queued_and_validates_audio_bounds(tmp_path):
         assert request["events"][2]["pitch"] == 50
 
 
-def test_retry_after_engraving_failure_reuses_inference(tmp_path):
-    app = create_app(tmp_path, start_worker=False)
-    with TestClient(app) as client:
+def test_retry_after_engraving_failure_reuses_inference(
+    tmp_path,
+    authenticated_app,
+    authenticated_client,
+):
+    app = authenticated_app(tmp_path)
+    with authenticated_client(app) as client:
         identifier = client.post("/api/jobs", files={"file": ("song.wav", b"x")}).json()["id"]
         directory = tmp_path / identifier
         (directory / "analysis.json").write_text("{}")
@@ -101,12 +117,17 @@ def test_retry_after_engraving_failure_reuses_inference(tmp_path):
 
 
 @pytest.mark.parametrize("missing", ["analysis.json", "events.json"])
-def test_refining_retry_without_complete_cache_keeps_initial_request(tmp_path, missing):
-    app = create_app(tmp_path, start_worker=False)
-    with TestClient(app) as client:
+def test_refining_retry_without_complete_cache_keeps_initial_request(
+    tmp_path,
+    missing,
+    authenticated_app,
+    authenticated_client,
+):
+    app = authenticated_app(tmp_path)
+    with authenticated_client(app) as client:
         identifier = client.post("/api/jobs", files={"file": ("song.wav", b"x")}).json()["id"]
         directory = tmp_path / identifier
-        original = (directory / "request.json").read_bytes()
+        original = json.loads((directory / "request.json").read_text())
         (directory / "analysis.json").write_text("{}")
         (directory / "events.json").write_text("[]")
         (directory / missing).unlink()
@@ -114,15 +135,15 @@ def test_refining_retry_without_complete_cache_keeps_initial_request(tmp_path, m
         app.state.store.update(identifier, "failed")
         response = client.post(f"/api/jobs/{identifier}/retry")
         assert response.status_code == 202 and response.json()["status"] == "queued"
-        assert (directory / "request.json").read_bytes() == original
+        assert json.loads((directory / "request.json").read_text()) == original
 
 
-def test_waveform_is_real_bounded_and_restricted(tmp_path):
+def test_waveform_is_real_bounded_and_restricted(tmp_path, authenticated_app, authenticated_client):
     import numpy as np
     import soundfile as sf
 
-    app = create_app(tmp_path, start_worker=False)
-    with TestClient(app) as client:
+    app = authenticated_app(tmp_path)
+    with authenticated_client(app) as client:
         identifier = client.post("/api/jobs", files={"file": ("test.wav", b"x")}).json()["id"]
         directory = tmp_path / identifier
         url = f"/api/jobs/{identifier}/waveform"
@@ -131,6 +152,7 @@ def test_waveform_is_real_bounded_and_restricted(tmp_path):
         samples = np.zeros((4800, 2), dtype=np.float32)
         samples[100, 1] = 0.75
         sf.write(directory / "audio.wav", samples, 4800, subtype="FLOAT")
+        app.state.store.update(identifier, "completed")
         response = client.get(url)
         assert response.status_code == 200
         assert response.json()["duration"] == 1
@@ -141,12 +163,18 @@ def test_waveform_is_real_bounded_and_restricted(tmp_path):
         assert client.get(url, params={"source": "drums.wav"}).status_code == 404
         samples[100, 1] = 0.25
         sf.write(directory / "audio.wav", samples, 4800, subtype="FLOAT")
+        app.state.store.update(identifier, "completed")
         assert max(client.get(url).json()["peaks"]) == 0.25
 
 
-def test_missing_frontend_gives_build_instructions(tmp_path, monkeypatch):
+def test_missing_frontend_gives_build_instructions(
+    tmp_path,
+    monkeypatch,
+    authenticated_app,
+    authenticated_client,
+):
     monkeypatch.setattr("transcription.app.STATIC", tmp_path / "missing-web")
-    with TestClient(create_app(tmp_path / "data", start_worker=False)) as client:
+    with authenticated_client(authenticated_app(tmp_path / "data")) as client:
         response = client.get("/")
         assert response.status_code == 503
         assert "npm run build" in response.text

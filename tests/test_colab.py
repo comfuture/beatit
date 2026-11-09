@@ -552,3 +552,172 @@ def test_operator_cleans_up_a_named_allocation_when_new_times_out(tmp_path, monk
     with pytest.raises((subprocess.TimeoutExpired, RuntimeError)):
         operator.main()
     assert sum("stop" in call for call in calls if call[0] == "colab") == 1
+
+
+def leased_directory(controller, work_token="c" * 32):
+    directory = controller.data / ".attempts" / JOB / work_token
+    directory.mkdir(parents=True)
+    (directory / "request.json").write_text('{"filename":"leased.wav","options":{}}')
+    (directory / "input").write_bytes(b"leased source")
+    return directory
+
+
+def test_leased_colab_client_controller_uses_job_identity_and_exact_attempt_directory(
+    environment, monkeypatch
+):
+    from transcription import colab_worker
+
+    controller, transport, legacy = environment
+    work_token = "c" * 32
+    directory = leased_directory(controller, work_token)
+    (legacy / "result.json").write_bytes(b"legacy result must stay unchanged")
+    controller.attach(session(), 90)
+    transport.marker = {"fingerprint": controller.fingerprint}
+    monkeypatch.setenv("BEATIT_JOB_ID", JOB)
+    monkeypatch.setenv("BEATIT_CLAIM_TOKEN", work_token)
+    paths = []
+
+    def rpc(path, payload=None, **kwargs):
+        paths.append(path)
+        assert path.startswith("/v1/jobs/" + JOB)
+        parts = path.split("/")
+        if payload is not None and len(parts) == 4:
+            assert payload["work_token"] == work_token
+            return controller.submit(JOB, payload["attempt"], payload["work_token"])
+        if path.endswith("/cancel"):
+            return controller.cancel(JOB, parts[4])
+        return controller.attempt(JOB, parts[4])
+
+    monkeypatch.setattr(colab_worker, "controller_request", rpc)
+    colab_worker.run(directory)
+    controller.job_thread.join(timeout=5)
+    result = json.loads((directory / "result.json").read_text())
+    assert result["generation"] == "render-123"
+    assert (directory / "render-123" / "score-1.svg").is_file()
+    assert (directory / "input").read_bytes() == b"leased source"
+    assert (legacy / "result.json").read_bytes() == b"legacy result must stay unchanged"
+    assert all("/" + work_token not in path for path in paths)
+    assert any("/jobs/" + JOB + "/" in code for code in transport.executed)
+
+
+def test_leased_submission_idempotency_binds_the_work_token(environment):
+    controller, transport, _ = environment
+    token = "c" * 32
+    leased_directory(controller, token)
+    leased_directory(controller, "d" * 32)
+    controller.attach(session(), 90)
+    transport.marker = {"fingerprint": controller.fingerprint}
+    transport.finish.clear()
+    controller.submit(JOB, ATTEMPT, token)
+    assert transport.launched.wait(3)
+    assert controller.submit(JOB, ATTEMPT, token)["status"] == "running"
+    with pytest.raises(ValueError, match="another request"):
+        controller.submit(JOB, ATTEMPT, "d" * 32)
+    controller.cancel(JOB, ATTEMPT)
+    controller.job_thread.join(timeout=5)
+    assert controller.attempt(JOB, ATTEMPT)["status"] == "cancelled"
+    assert not (controller.data / ".attempts" / JOB / ("d" * 32) / "result.json").exists()
+
+
+@pytest.mark.parametrize("part", [".attempts", "job", "work_token"])
+def test_leased_submission_rejects_every_symlinked_path_component(environment, tmp_path, part):
+    controller, transport, _ = environment
+    token = "c" * 32
+    directory = leased_directory(controller, token)
+    target = {
+        ".attempts": controller.data / ".attempts",
+        "job": directory.parent,
+        "work_token": directory,
+    }[part]
+    moved = tmp_path / "outside-shared-data"
+    target.rename(moved)
+    target.symlink_to(moved, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlink"):
+        controller.submit(JOB, ATTEMPT, token)
+    assert not transport.executed
+    assert not (moved / "result.json").exists()
+
+
+@pytest.mark.parametrize("token", ["", "../" + "c" * 32, "g" * 32, "c" * 31])
+def test_private_submission_rejects_invalid_work_token_before_processing(environment, token):
+    controller, transport, _ = environment
+    with TestClient(create_controller(controller, SECRET)) as client:
+        response = client.post(
+            "/v1/jobs/" + JOB,
+            json={"attempt": ATTEMPT, "work_token": token},
+            headers={"Authorization": "Bearer " + SECRET},
+        )
+        assert response.status_code == 422
+    assert not transport.executed
+
+
+def test_leased_restart_cancels_original_remote_identity_without_writing_a_new_attempt(environment):
+    controller, transport, legacy = environment
+    old = leased_directory(controller, "c" * 32)
+    controller.attach(session(), 90)
+    transport.marker = {"fingerprint": controller.fingerprint}
+    transport.finish.clear()
+    transport.cancel_fails = True
+    controller.submit(JOB, ATTEMPT, "c" * 32)
+    assert transport.launched.wait(3)
+    controller.cancel(JOB, ATTEMPT)
+    controller.job_thread.join(timeout=5)
+    assert controller.attempt(JOB, ATTEMPT)["cleanup_pending"]
+    shutil.rmtree(old)
+    restarted = Controller(
+        controller.data, controller.state, controller.source, transport=transport
+    )
+    restarted.attach(session(), 90)
+    new = leased_directory(restarted, "d" * 32)
+    transport.cancel_fails = False
+    transport.finish.set()
+    restarted.submit(JOB, "e" * 32, "d" * 32)
+    restarted.job_thread.join(timeout=5)
+    assert restarted.attempt(JOB, "e" * 32)["status"] == "completed"
+    assert (new / "result.json").is_file()
+    assert not old.exists()
+    assert not (legacy / "result.json").exists()
+    cancellation = next(code for code in transport.executed if "cancel(" in code)
+    assert repr(JOB) in cancellation and repr(ATTEMPT) in cancellation
+
+
+def test_colab_client_cancels_the_remote_attempt_under_actual_job_id(tmp_path, monkeypatch):
+    from transcription import colab_worker
+
+    token = "c" * 32
+    directory = tmp_path / ".attempts" / JOB / token
+    directory.mkdir(parents=True)
+    monkeypatch.setenv("BEATIT_JOB_ID", JOB)
+    monkeypatch.setenv("BEATIT_CLAIM_TOKEN", token)
+    calls = []
+
+    def rpc(path, payload=None, **kwargs):
+        calls.append((path, payload))
+        if path.endswith("/cancel"):
+            return {"status": "cancelled"}
+        if payload is not None:
+            return {"status": "running"}
+        raise RuntimeError("controller disconnected")
+
+    monkeypatch.setattr(colab_worker, "controller_request", rpc)
+    with pytest.raises(RuntimeError, match="disconnected"):
+        colab_worker.run(directory)
+    remote_attempt = calls[0][1]["attempt"]
+    assert calls[-1][0] == f"/v1/jobs/{JOB}/{remote_attempt}/cancel"
+
+
+def test_colab_client_rejects_a_directory_from_another_job_before_rpc(tmp_path, monkeypatch):
+    from transcription import colab_worker
+
+    token = "c" * 32
+    directory = tmp_path / ".attempts" / ("d" * 32) / token
+    directory.mkdir(parents=True)
+    monkeypatch.setenv("BEATIT_JOB_ID", JOB)
+    monkeypatch.setenv("BEATIT_CLAIM_TOKEN", token)
+    calls = []
+    monkeypatch.setattr(
+        colab_worker, "controller_request", lambda *args, **kwargs: calls.append(args)
+    )
+    with pytest.raises(RuntimeError, match="does not match"):
+        colab_worker.run(directory)
+    assert calls == []

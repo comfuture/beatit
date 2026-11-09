@@ -9,6 +9,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from .colab_artifacts import valid_identifier
+
 
 def controller_request(path: str, payload=None, *, method=None, timeout=10):
     base = os.environ.get("COLAB_CONTROLLER_URL", "").rstrip("/")
@@ -63,7 +65,28 @@ def execution_capabilities(local: dict):
 
 
 def run(directory: Path):
-    identifier = directory.name
+    identifier = os.environ.get("BEATIT_JOB_ID")
+    work_token = os.environ.get("BEATIT_CLAIM_TOKEN")
+    if identifier or work_token:
+        if (
+            not identifier
+            or not work_token
+            or not valid_identifier(identifier)
+            or not valid_identifier(work_token)
+        ):
+            raise RuntimeError("Invalid Colab job lease context.")
+        # The controller shares the scratch volume, but derives the path itself.
+        # Never send a caller-controlled absolute/relative filesystem path.
+        if (
+            directory.name != work_token
+            or directory.parent.name != identifier
+            or directory.parent.parent.name != ".attempts"
+        ):
+            raise RuntimeError("Colab work directory does not match the job lease.")
+    else:
+        identifier = directory.name
+        if not valid_identifier(identifier):
+            raise RuntimeError("Invalid Colab job identifier.")
     attempt = uuid4().hex
     route = "/v1/jobs/" + identifier
     finished = False
@@ -78,7 +101,10 @@ def run(directory: Path):
 
     previous = {sig: signal.signal(sig, cancel) for sig in (signal.SIGTERM, signal.SIGINT)}
     try:
-        controller_request(route, {"attempt": attempt})
+        submission = {"attempt": attempt}
+        if work_token:
+            submission["work_token"] = work_token
+        controller_request(route, submission)
         deadline = time.monotonic() + 4800
         while time.monotonic() < deadline:
             status = controller_request(route + "/" + attempt)

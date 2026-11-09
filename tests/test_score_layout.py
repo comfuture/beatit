@@ -1,9 +1,7 @@
 import json
 
 import pytest
-from fastapi.testclient import TestClient
 
-from transcription.app import create_app
 from transcription.score_layout import score_layout
 
 
@@ -74,9 +72,14 @@ def test_unrecognized_or_incomplete_layout_never_guesses_bars(tmp_path, svg, bar
         )
 
 
-def test_layout_api_pins_generation_and_refreshes_changed_files(tmp_path):
-    app = create_app(tmp_path, start_worker=False)
-    with TestClient(app) as client:
+@pytest.mark.mysql
+def test_layout_api_pins_generation_and_refreshes_changed_files(
+    tmp_path,
+    authenticated_app,
+    authenticated_client,
+):
+    app = authenticated_app(tmp_path)
+    with authenticated_client(app) as client:
         identifier = client.post("/api/jobs", files={"file": ("song.wav", b"x")}).json()["id"]
         url = f"/api/jobs/{identifier}/score-layout"
         assert client.get(url, params={"generation": "render-1"}).status_code == 404
@@ -94,9 +97,11 @@ def test_layout_api_pins_generation_and_refreshes_changed_files(tmp_path):
                 }
             )
         )
+        app.state.store.update(identifier, "completed")
         assert client.get(url, params={"generation": "render-0"}).status_code == 409
         response = client.get(url, params={"generation": "render-1"})
         assert response.status_code == 200
         assert len(response.json()["measures"]) == 3
         (render / "score.svg").write_text("<svg/>")
+        app.state.store.update(identifier, "completed")
         assert client.get(url, params={"generation": "render-1"}).json()["measures"] == []
