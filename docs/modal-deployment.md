@@ -210,7 +210,9 @@ after a real workload comparison.
 
 SIGTERM/SIGINT cancels the remote FunctionCall with container termination. Persisted
 call IDs allow a restarted service to cancel an interrupted call before processing
-more work. A hard kill or a network outage can leave temporary remote files; inspect
+more work. Records live in the data root's `.modal-calls/` directory so deleting a
+local job after a failed cancellation cannot delete its recovery record. Older
+per-job `modal-call.json` records are also recovered. A hard kill or a network outage can leave temporary remote files; inspect
 the job Volume when recovering from such a failure. The local data directory keeps
 original uploads and validated results. Result metadata identifies Modal, the model
 fingerprint, storage mode, call ID and end-to-end client time.

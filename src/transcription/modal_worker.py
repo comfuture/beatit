@@ -31,6 +31,24 @@ from .modal_config import (
 from .modal_credentials import load_credentials
 
 CALL_FILE = "modal-call.json"
+CALL_DIRECTORY = ".modal-calls"
+
+
+def call_record(directory: Path) -> Path:
+    # A job can be deleted after an unsuccessful cancellation. Keep the recovery
+    # record outside that job's directory so a restart can still stop paid work.
+    return directory.parent / CALL_DIRECTORY / (directory.name + ".json")
+
+
+def save_call(directory: Path, call):
+    record = call_record(directory)
+    record.parent.mkdir(mode=0o700, exist_ok=True)
+    save_json(record, {"call_id": call.object_id})
+
+
+def clear_call(directory: Path):
+    call_record(directory).unlink(missing_ok=True)
+    (directory / CALL_FILE).unlink(missing_ok=True)  # Older worker compatibility.
 
 
 def function(name):
@@ -86,13 +104,15 @@ def download(volume, remote: str, destination: Path):
 
 def cancel_record(directory: Path):
     """Also used after server restart or a forced worker termination."""
-    record = directory / CALL_FILE
+    record = call_record(directory)
+    if not record.is_file():
+        record = directory / CALL_FILE
     if not record.is_file():
         return
     load_credentials()
     value = json.loads(record.read_text())
     modal.FunctionCall.from_id(value["call_id"]).cancel(terminate_containers=True)
-    record.unlink(missing_ok=True)
+    clear_call(directory)
 
 
 def run(directory: Path):
@@ -127,7 +147,7 @@ def run(directory: Path):
             except Exception:
                 logging.exception("Could not cancel Modal call; retained its recovery record")
             else:
-                (directory / CALL_FILE).unlink(missing_ok=True)
+                clear_call(directory)
         if signum is not None:
             raise SystemExit(128 + signum)
 
@@ -138,7 +158,7 @@ def run(directory: Path):
         report("preparing", 0.01, "Modal 이미지와 모델 캐시를 확인합니다.")
         preparation = function("prepare_models").spawn()
         calls.append(preparation)
-        save_json(directory / CALL_FILE, {"call_id": preparation.object_id})
+        save_call(directory, preparation)
         deadline = time.monotonic() + 1800
         while True:
             try:
@@ -148,7 +168,7 @@ def run(directory: Path):
                 if time.monotonic() > deadline:
                     raise TimeoutError("Modal 모델 준비 시간이 초과되었습니다.") from None
         calls.clear()
-        (directory / CALL_FILE).unlink(missing_ok=True)
+        clear_call(directory)
         if manifest.get("fingerprint") != MODEL_FINGERPRINT:
             raise RuntimeError("Modal 모델 버전이 다릅니다. 앱을 다시 배포하세요.")
         phase_seconds["model_preparation"] = round(time.monotonic() - started, 3)
@@ -168,13 +188,13 @@ def run(directory: Path):
             report("allocating", 0.05, "준비된 Modal 이미지에서 GPU를 시작합니다.")
             call = function("transcribe").spawn(job, attempt)
             calls.append(call)
-            save_json(directory / CALL_FILE, {"call_id": call.object_id})
+            save_call(directory, call)
             deadline = time.monotonic() + 7500
             while True:
                 try:
                     provenance = call.get(timeout=1)
                     calls.clear()
-                    (directory / CALL_FILE).unlink(missing_ok=True)
+                    clear_call(directory)
                     break
                 except (TimeoutError, modal.exception.TimeoutError):
                     if time.monotonic() > deadline:

@@ -45,11 +45,15 @@ class JobStore:
                 "이 데이터 디렉토리에서 이미 서버가 실행 중입니다. 서버는 한 프로세스로 실행하세요."
             ) from None
         # A hard stop may have killed the RPC client before its cancellation handler.
-        from .modal_worker import CALL_FILE, cancel_record
+        from .modal_worker import CALL_DIRECTORY, CALL_FILE, cancel_record
 
-        for record in self.root.glob("*/" + CALL_FILE):
+        interrupted = {record.parent for record in self.root.glob("*/" + CALL_FILE)}
+        interrupted.update(
+            self.root / record.stem for record in (self.root / CALL_DIRECTORY).glob("*.json")
+        )
+        for directory in interrupted:
             try:
-                cancel_record(record.parent)
+                cancel_record(directory)
             except Exception:
                 import logging
 
