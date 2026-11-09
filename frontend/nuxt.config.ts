@@ -14,6 +14,13 @@ export default defineNuxtConfig({
     provider: "none",
     clientBundle: { scan: true, includeCustomCollections: true },
   },
+  hooks: {
+    "build:manifest": (manifest) => {
+      // Speed Brain rejects uncached prefetches with 503. These optional chunks
+      // (including Nuxt error pages) can load on demand; retain entry preloads.
+      for (const chunk of Object.values(manifest)) chunk.prefetch = false;
+    },
+  },
   app: {
     head: {
       title: "Beatit — Drum Studio",
