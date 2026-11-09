@@ -1,0 +1,279 @@
+{
+  "date": "2026-11-09",
+  "timezone": "Asia/Seoul",
+  "scope": "Issue 7 managed MySQL, private object storage, authentication, owner isolation, migration and deployment evidence",
+  "database": {
+    "provider": "Existing OCI managed MySQL service",
+    "reported_version": "26.10.0-cloud",
+    "application_database": "Dedicated Beatit database and app-scoped credentials",
+    "mac_verified_path": "SSH TCP forwarding through chunsik to OCI; loopback port 13306",
+    "chunsik_verified_path": "Direct private OCI endpoint",
+    "cloudflared_database_route": "Not verified; no database Access hostname was established",
+    "tls": {
+      "mode": "VERIFY_CA",
+      "cipher": "TLS_AES_128_GCM_SHA256",
+      "certificate_chain": "CERT_REQUIRED with pinned OCI CA",
+      "hostname_matching": false,
+      "hostname_exception": "Explicit VERIFY_CA for the provider-generated certificate; unverified TLS modes are rejected"
+    },
+    "applied_migrations": [
+      "001_projects.sql",
+      "002_auth.sql",
+      "003_remote_calls.sql"
+    ],
+    "single_probe_ms": {
+      "select": 54.239,
+      "locking_transaction": 138.317
+    },
+    "measurement_note": "One Mac SSH-path observation, not a latency distribution or a MySQL/PostgreSQL/D1 benchmark"
+  },
+  "object_storage": {
+    "provider": "Cloudflare R2",
+    "bucket_access": "Private; credentials remain server-side",
+    "probe_bytes": 4096,
+    "sha256_roundtrip_verified": true,
+    "single_put_get_delete_ms": 588.569
+  },
+  "synthetic_managed_smoke": {
+    "identity_source": "Two explicitly tagged synthetic users with internal opaque DB sessions; no Google-provider login",
+    "google_provider_verified": false,
+    "model_inference_executed": false,
+    "checks": {
+      "queue": {
+        "simultaneous_submissions": 2,
+        "competing_claim_winners": 1,
+        "fair_order": [
+          "A",
+          "B",
+          "A"
+        ],
+        "cancel_fenced": true,
+        "retry": true
+      },
+      "isolation_assertions": 47,
+      "revisions": {
+        "metadata": true,
+        "events": true,
+        "beat_review": true,
+        "generation_changed": true
+      },
+      "empty_scratch_restoration": true,
+      "session_revocation": true,
+      "baseline_counts_restored": true
+    },
+    "generated_artifacts": [
+      "MusicXML",
+      "SVG",
+      "MIDI",
+      "ZIP",
+      "audio media ranges",
+      "waveform",
+      "score layout"
+    ],
+    "backup": {
+      "jobs": 3,
+      "objects": 41,
+      "bytes": 488214,
+      "sha256": "37a6f76768ca3da5abbc575b43670c2e0c7078adcd37dfb739d89ab318ee0ef1",
+      "restore_performed": true
+    },
+    "restore": {
+      "status": "passed",
+      "google_provider_verified": false,
+      "restored_objects": 41,
+      "verified_object_hashes": 41,
+      "restored_jobs": 3,
+      "isolation_assertions": 47,
+      "both_owner_artifacts_verified": true,
+      "revisions_and_review_verified": true,
+      "cleanup": {
+        "owners": 2,
+        "jobs": 3,
+        "orphan_objects": 0
+      },
+      "verified_deleted_restored_objects": 41,
+      "baseline_empty_restored": true
+    },
+    "restored_counts": {
+      "users": 2,
+      "sessions": 0,
+      "oauth_states": 0,
+      "projects": 2,
+      "jobs": 3,
+      "artifacts": 41,
+      "revisions": 4,
+      "owner_schedule": 2,
+      "legacy_imports": 0,
+      "object_garbage": 0,
+      "remote_calls": 0
+    },
+    "cleanup": {
+      "synthetic_owners_removed": 2,
+      "synthetic_jobs_removed": 3,
+      "all_11_durable_auth_runtime_table_counts_restored_to_zero": true,
+      "restored_objects_verified_deleted": 41,
+      "unrelated_rows_deleted": false,
+      "truncate_or_database_reset_used": false
+    }
+  },
+  "deployment": {
+    "host": "chunsik",
+    "architecture": "linux/arm64",
+    "uid": 10001,
+    "compose_project": "beatit-multiuser",
+    "directory": "/home/ubuntu/services/beatit-multiuser",
+    "origin": "http://localhost:18001",
+    "public_origin": "https://beatit.changkyun.kim",
+    "image": "beatit:issue7-dcef260",
+    "image_id": "sha256:1bb1aeec09fe0ab91fb891f44eb4eb18163aeef37e23f38c76269b9b5481bd62",
+    "health": "healthy",
+    "env_file": "Private; no credential values recorded",
+    "mysql_ca_secret": {
+      "container_owner_uid": 10001,
+      "mode": "0400"
+    },
+    "cloudflare_tunnel": {
+      "route": "beatit.changkyun.kim -> http://localhost:18001",
+      "existing_api_proxy_port": 10100,
+      "existing_proxy_and_catchall_preserved": true
+    },
+    "unauthenticated_edge_statuses": {
+      "/": 200,
+      "/api/health": 200,
+      "/api/auth/me": 200,
+      "/api/jobs": 401,
+      "/api/projects": 401
+    },
+    "legacy_private_service": {
+      "container": "beatit-beatit-1",
+      "state": "exited",
+      "stop": "Reversible; private port-18000 service stopped after final smoke",
+      "original_image": "beatit:5a01d492327e",
+      "retained_image_tag": "beatit:pre-multiuser-20261109",
+      "original_volumes_retained": true,
+      "protected_environment_retained": true,
+      "offline_backup_retained": true
+    },
+    "compose_files": [
+      "compose.yaml",
+      "compose.mysql-tls.yaml"
+    ],
+    "modal_selection": "BEATIT_EXECUTION_BACKEND=modal in the protected environment"
+  },
+  "google_oauth_live": {
+    "successful_real_accounts": 1,
+    "confirmed": "Personal-account consent, registered profile, secure session cookie, browser workspace, UI logout and routine account-selection login with saved history reopening",
+    "second_real_account": "Not exercised; the operator explicitly skipped the work-account profile",
+    "second_synthetic_account_is_not_google_provider_evidence": true,
+    "logout": {
+      "http_status": 204,
+      "workspace_cleared": true
+    },
+    "routine_relogin": {
+      "succeeded": true,
+      "fresh_consent_required": false,
+      "saved_history_reopened": true
+    }
+  },
+  "legacy_migration": {
+    "explicit_owner_assignment": "Operator assigned all seven legacy completed jobs to the personal signed-in account; no email or Google subject recorded",
+    "offline_backup": {
+      "host_path": "/home/ubuntu/services/beatit/backups/issue7-20261109-multiuser/legacy-data.tar.gz",
+      "bytes": 224963486,
+      "sha256": "f7cb7a3b461d24dd8d155b44d6961676077061a10b28eafc5a6a7ea602ad9967"
+    },
+    "imported_completed_jobs": 7,
+    "result_json_equalities_verified": 7,
+    "musicxml_and_zip_hashes_verified": 14,
+    "idempotent_rerun_skips": 7,
+    "source_permission_fix": "Corrected ownership of the separate extracted import copy; original data and offline archive were not changed",
+    "subsequent_user_delete": {
+      "count": 1,
+      "http_status": 204,
+      "remaining_imported_jobs": 6,
+      "instruction": "Do not rerun import to recreate the deliberately deleted job"
+    }
+  },
+  "private_evidence_locations": [
+    "work/issue7/managed-probe.json",
+    "work/issue7/edge-verification.json",
+    "work/issue7/4e34820ea8fd4dea9ae1993f502f6334/report.json",
+    "work/issue7/live-transcription.json",
+    "work/issue7/live-restored-score.png"
+  ],
+  "privacy": "No real email address, Google subject, OAuth/session secret, database credential or credential-bearing URL is included.",
+  "real_browser_modal_fixture": {
+    "filename": "Issue7-owner-A-8s.wav",
+    "source": "New original eight-second WAV submitted through the signed-in production browser",
+    "status": "completed",
+    "execution_backend": "modal",
+    "inference_device": "cuda",
+    "reported_processing_seconds": 56.9,
+    "initial_result": {
+      "bpm": 120,
+      "meter": "4/4",
+      "bars": 5,
+      "events": 29
+    },
+    "ui_edits": {
+      "kick_toggle": true,
+      "undo": true,
+      "redo": true,
+      "score_regeneration_events": 30,
+      "title_and_author_applied": true,
+      "durable_revisions": 3
+    },
+    "browser_zip_download": {
+      "bytes": 61546,
+      "sha256": "160f72bd7754781deec1f5fd78b4d0a056bdaeaea94c15209c7e3648033c3ced",
+      "matches_sql_manifest": true,
+      "testzip": "passed",
+      "events": 30,
+      "musicxml_title_verified": true
+    },
+    "note": "Short functional end-to-end check, not a transcription-accuracy benchmark or a second Google account"
+  },
+  "deployed_container_recreation": {
+    "precondition": {
+      "active_jobs": 0,
+      "worker_slot": "idle",
+      "remote_calls": 0
+    },
+    "stopped_before_scratch_clear": true,
+    "scratch_volume": "beatit-multiuser_data",
+    "scratch_top_level_entries_before": 3,
+    "scratch_top_level_entries_after_clear": 0,
+    "only_isolated_scratch_cleared": true,
+    "old_container_id": "d8b8d328b334",
+    "new_container_id": "87e3b49b1fb1",
+    "same_image": true,
+    "health": "healthy",
+    "auth_cookie_survived": true,
+    "selection_recovery": "User manually reopened the saved job from history after fail-closed workspace clearing during downtime",
+    "automatic_selected_session_recovery_claimed": false,
+    "restored_result": {
+      "events": 30,
+      "metadata": true,
+      "svg": true,
+      "audio_range_status": 206,
+      "waveform_status": 200,
+      "layout_status": 200,
+      "current_artifact_sha256_and_sizes_verified": 9,
+      "durable_revisions_retained": 3
+    },
+    "private_final_screenshot": "work/issue7/live-restored-score.png"
+  },
+  "remaining_evidence_limits": {
+    "two_real_google_accounts": "Not exercised; operator explicitly skipped the company profile",
+    "provider_native_backup_retention": "Not inspected; combined application/object backup and restore were separately verified"
+  },
+  "ci": {
+    "verified_source_commit": "dcef260",
+    "non_mysql_python_passed": 205,
+    "mysql_python_passed": 68,
+    "python_total_passed": 273,
+    "frontend_unit_passed": 45,
+    "playwright_passed": 51,
+    "note": "Verified CI logs for the deployed source label; documentation-only follow-up has no additional runtime changes"
+  }
+}
