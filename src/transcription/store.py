@@ -31,6 +31,13 @@ from .playback_preview import (
     prepare_playback_previews,
     preview_matches,
 )
+from .upload_journal import (
+    abandon_uploads,
+    collect_staged_objects,
+    finish_publication,
+    lock_publication,
+    put_staged_object,
+)
 
 TERMINAL = {"completed", "failed", "cancelled"}
 QUEUED = {"stage": "queued", "progress": 0, "message": "분석 대기 중"}
@@ -197,7 +204,9 @@ class JobStore:
     def _admit(self, connection, owner_id):
         # Serialize admission for one owner even across API processes.
         connection.execute(
-            "INSERT IGNORE INTO beatit.owner_schedule(owner_id) VALUES (%s)", (owner_id,)
+            """INSERT INTO beatit.owner_schedule(owner_id) VALUES (%s)
+               ON DUPLICATE KEY UPDATE owner_id=VALUES(owner_id)""",
+            (owner_id,),
         )
         connection.execute(
             "SELECT owner_id FROM beatit.owner_schedule WHERE owner_id=%s FOR UPDATE", (owner_id,)
@@ -225,42 +234,48 @@ class JobStore:
             ):
                 raise KeyError(project_id)
         manifests, payloads = self._capture(identifier, directory)
-        now = time.time()
-        with self.connect() as connection:
-            self._admit(connection, owner_id)
-            if project_id is None:
-                project_id = uuid4().hex
+        try:
+            now = time.time()
+            with self.connect() as connection:
+                self._admit(connection, owner_id)
+                if project_id is None:
+                    project_id = uuid4().hex
+                    connection.execute(
+                        "INSERT INTO beatit.projects VALUES (%s,%s,%s,%s,%s)",
+                        (project_id, owner_id, filename, now, now),
+                    )
+                elif not connection.execute(
+                    "SELECT 1 FROM beatit.projects WHERE id=%s AND owner_id=%s FOR UPDATE",
+                    (project_id, owner_id),
+                ).fetchone():
+                    raise KeyError(project_id)
                 connection.execute(
-                    "INSERT INTO beatit.projects VALUES (%s,%s,%s,%s,%s)",
-                    (project_id, owner_id, filename, now, now),
+                    """INSERT INTO beatit.jobs
+                       (id,project_id,owner_id,filename,status,created,updated,queued_at,request,progress,payloads)
+                       VALUES (%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,%s)""",
+                    (
+                        identifier,
+                        project_id,
+                        owner_id,
+                        filename,
+                        now,
+                        now,
+                        now,
+                        json.dumps(request),
+                        json.dumps(QUEUED),
+                        json.dumps(payloads),
+                    ),
                 )
-            elif not connection.execute(
-                "SELECT 1 FROM beatit.projects WHERE id=%s AND owner_id=%s FOR UPDATE",
-                (project_id, owner_id),
-            ).fetchone():
-                raise KeyError(project_id)
-            connection.execute(
-                """INSERT INTO beatit.jobs
-                   (id,project_id,owner_id,filename,status,created,updated,queued_at,request,progress,payloads)
-                   VALUES (%s,%s,%s,%s,'queued',%s,%s,%s,%s,%s,%s)""",
-                (
-                    identifier,
-                    project_id,
-                    owner_id,
-                    filename,
-                    now,
-                    now,
-                    now,
-                    json.dumps(request),
-                    json.dumps(QUEUED),
-                    json.dumps(payloads),
-                ),
-            )
-            connection.execute(
-                "INSERT IGNORE INTO beatit.owner_schedule(owner_id) VALUES (%s)",
-                (owner_id,),
-            )
-            self._write_manifests(connection, identifier, manifests)
+                connection.execute(
+                    "INSERT IGNORE INTO beatit.owner_schedule(owner_id) VALUES (%s)",
+                    (owner_id,),
+                )
+                self._write_manifests(connection, identifier, manifests)
+        except BaseException:
+            # Do not synchronously delete: COMMIT may have succeeded despite a
+            # lost acknowledgement. Atomic journal removal/ref checks decide GC.
+            abandon_uploads(self, manifests)
+            raise
 
     @staticmethod
     def _safe_path(relative):
@@ -291,38 +306,49 @@ class JobStore:
                 ).fetchall()
             }
         manifests, payloads = [], {}
-        for path in sorted(directory.rglob("*")):
-            relative = path.relative_to(directory).as_posix()
-            if path.is_symlink() or not path.is_file() or not self._durable(relative):
-                continue
-            digest = file_digest(path)
-            existing = previous.get(relative)
-            # Changed paths receive a new key even when reverting to older bytes.
-            # A concurrent garbage collector can never delete a republished key.
-            key = f"jobs/{identifier}/{uuid4().hex}/{digest}/{relative}"
-            if not existing or existing["sha256"] != digest:
-                try:
-                    self.objects.put(key, path)
-                except Exception as error:
-                    if relative not in PREVIEW_FILES:
-                        raise
-                    logging.warning(
-                        "Optional playback object upload failed (%s); original audio remains available",
-                        type(error).__name__,
-                    )
+        try:
+            for path in sorted(directory.rglob("*")):
+                relative = path.relative_to(directory).as_posix()
+                if path.is_symlink() or not path.is_file() or not self._durable(relative):
                     continue
-            else:
-                key = existing["object_key"]
-            manifests.append(
-                {"path": relative, "object_key": key, "size": path.stat().st_size, "sha256": digest}
-            )
-            if path.suffix == ".json":
-                payloads[relative] = json.loads(path.read_text())
+                digest = file_digest(path)
+                existing = previous.get(relative)
+                # Never recycle a retired key; each new PUT is journaled first.
+                key = f"jobs/{identifier}/{uuid4().hex}/{digest}/{relative}"
+                token = None
+                if not existing or existing["sha256"] != digest:
+                    try:
+                        token = put_staged_object(self, key, path)
+                    except Exception as error:
+                        if relative not in PREVIEW_FILES:
+                            raise
+                        logging.warning(
+                            "Optional playback object upload failed (%s); original audio remains available",
+                            type(error).__name__,
+                        )
+                        continue
+                else:
+                    key = existing["object_key"]
+                manifest = {
+                    "path": relative,
+                    "object_key": key,
+                    "size": path.stat().st_size,
+                    "sha256": digest,
+                }
+                if token:
+                    manifest["upload_token"] = token
+                manifests.append(manifest)
+                if path.suffix == ".json":
+                    payloads[relative] = json.loads(path.read_text())
+        except BaseException:
+            abandon_uploads(self, manifests)
+            raise
         return manifests, payloads
 
     @staticmethod
     def _write_manifests(connection, identifier, manifests):
         for manifest in manifests:
+            lock_publication(connection, manifest)
             connection.execute(
                 """INSERT IGNORE INTO beatit.object_garbage(object_key,created)
                    SELECT object_key,UNIX_TIMESTAMP(CURRENT_TIMESTAMP(6)) FROM beatit.artifacts
@@ -341,6 +367,7 @@ class JobStore:
                     manifest["sha256"],
                 ),
             )
+            finish_publication(connection, manifest)
 
     def _cached_object(self, manifest):
         # Cache keys include digest so a new revision cannot reuse stale bytes.
@@ -457,11 +484,18 @@ class JobStore:
                     if old and old["sha256"] == digest
                     else f"jobs/{identifier}/{uuid4().hex}/{digest}/{name}"
                 )
+                token = None
                 if not old or old["sha256"] != digest:
-                    self.objects.put(key, path)
-                manifests.append(
-                    {"path": name, "object_key": key, "size": path.stat().st_size, "sha256": digest}
-                )
+                    token = put_staged_object(self, key, path)
+                manifest = {
+                    "path": name,
+                    "object_key": key,
+                    "size": path.stat().st_size,
+                    "sha256": digest,
+                }
+                if token:
+                    manifest["upload_token"] = token
+                manifests.append(manifest)
             with self.connect() as connection:
                 current = self._owned(connection, identifier, owner_id, lock=True)
                 if current["status"] != "completed" or current["result"] != row["result"]:
@@ -613,6 +647,7 @@ class JobStore:
         self.collect_garbage()
 
     def collect_garbage(self):
+        collect_staged_objects(self)
         with self.connect() as connection:
             garbage = connection.execute(
                 "SELECT object_key FROM beatit.object_garbage LIMIT 100"

@@ -82,19 +82,20 @@ class Connection:
 
 
 class _Checkout:
-    def __init__(self, database):
+    def __init__(self, database, pool=None):
         self.database = database
+        self.pool = pool if pool is not None else database.pool
         self.raw = None
 
     def __enter__(self):
-        self.raw = self.database.pool.connect()
+        self.raw = self.pool.connect()
         try:
             self.raw.ping(reconnect=False)
             self.raw.begin()
         except Exception:
             self.raw.invalidate()
             self.raw.close()
-            self.raw = self.database.pool.connect()
+            self.raw = self.pool.connect()
             self.raw.begin()
         return Connection(self.raw, self.database.name)
 
@@ -149,6 +150,8 @@ class Database:
             timeout=10,
             recycle=300,
         )
+        # Slow object transfers hold session locks outside the API/heartbeat pool.
+        self.upload_pool = QueuePool(connect, pool_size=2, max_overflow=0, timeout=30, recycle=300)
         with self.connection() as connection:
             version = connection.execute("SELECT VERSION() AS version").fetchone()["version"]
             if "mariadb" in version.lower() or int(version.split(".")[0]) < 8:
@@ -157,6 +160,9 @@ class Database:
 
     def connection(self):
         return _Checkout(self)
+
+    def object_upload_connection(self):
+        return _Checkout(self, pool=self.upload_pool)
 
     def migrate(self):
         # MySQL DDL commits implicitly. The session lock prevents concurrent DDL;
@@ -194,3 +200,4 @@ class Database:
 
     def close(self):
         self.pool.dispose()
+        self.upload_pool.dispose()
