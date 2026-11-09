@@ -6,11 +6,15 @@ Compose project from the retained legacy installation. Durable projects and edit
 use the existing managed OCI MySQL service; uploaded media and generated files use
 private Cloudflare R2. The application data volume is disposable scratch.
 
+The direct HTTPS/Nginx deployment supersedes the Tunnel routing and chunked-upload
+checkpoint below. See [direct origin operations](direct-origin.md) for the active
+configuration, certificate renewal, SSE/session behavior, measurement and rollback.
+
 Current setup, migrations, backup/restore and TLS details are in
 [multi-user deployment](multi-user-deployment.md). Sanitized measured evidence is
 recorded in [the 2026-11-09 managed verification record](benchmarks/multiuser-managed-2026-11-09.json).
 
-## Current multi-user deployment (2026-11-09)
+## Initial multi-user deployment checkpoint (2026-11-09)
 
 | Item | Observed value |
 | --- | --- |
@@ -41,7 +45,7 @@ omitted in this configuration. The Mac's measured connection uses SSH TCP
 forwarding through chunsik on local port 13306. A database-specific Cloudflare
 Access hostname was not verified; the application HTTPS tunnel is a separate path.
 
-## Large browser uploads
+## Cloudflare-proxied upload fallback
 
 The domain's Cloudflare upload limit is 100 MB per request. The application can
 still accept media up to its advertised 1 GiB total limit: files larger than
