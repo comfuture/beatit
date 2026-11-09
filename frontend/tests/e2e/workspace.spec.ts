@@ -348,6 +348,50 @@ test("reconnection loads new artifacts while an old generation is pending and ig
   expect(state.errors).toEqual([]);
 });
 
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 740 }]) {
+  test(`Credits keeps its links, dedication and keyboard focus at ${viewport.width}px`, async ({ page }, testInfo) => {
+    const state = await setup(page);
+    await openSession(page);
+    await page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true }).click();
+    await page.setViewportSize(viewport);
+    const trigger = page.locator(".status-bar").getByRole("button", { name: "Credits", exact: true });
+    await expect(trigger).toBeVisible();
+    expect(await page.locator(".status-bar").evaluate((bar) => bar.scrollWidth <= bar.clientWidth)).toBe(true);
+    const bounds = await trigger.boundingBox();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog", { name: "Credits", exact: true });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("link")).toHaveCount(12);
+    await expect(dialog.getByRole("link", { name: "Nuxt (새 탭에서 열기)", exact: true })).toHaveAttribute("href", "https://github.com/nuxt/nuxt");
+    await expect(dialog.getByRole("link", { name: "ADTOF-pytorch (새 탭에서 열기)", exact: true })).toHaveAttribute("href", "https://github.com/xavriley/ADTOF-pytorch");
+    for (const link of await dialog.getByRole("link").all()) {
+      await expect(link).toHaveAttribute("href", /^https:\/\/github\.com\//);
+      await expect(link).toHaveAttribute("target", "_blank");
+      await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    }
+    const dedication = "Made for Hayeon with ❤️ - papa";
+    await expect(dialog.getByText(dedication, { exact: true })).toBeVisible();
+    expect((await dialog.innerText()).trim().endsWith(dedication)).toBe(true);
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    if (viewport.width === 390) await page.screenshot({ path: testInfo.outputPath("credits-mobile.png") });
+    for (let index = 0; index < 14; index++) {
+      await page.keyboard.press("Tab");
+      expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+    }
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await dialog.getByRole("button", { name: "닫기", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText("저장하지 않은 변경 사항", { exact: true })).toBeVisible();
+    expect(state.errors).toEqual([]);
+  });
+}
+
 test("Modal starts on demand with service configuration and no engine selector", async ({ page }) => {
   await setup(page, { modal: true });
   await expect(page.locator(".brand-version")).toHaveText("MODAL");

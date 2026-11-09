@@ -749,7 +749,7 @@ onBeforeUnmount(() => {
               }}
               GRID</span
             ><span class="status-hint">SPACE 재생 / 정지</span
-            ><span>BEATIT STUDIO</span>
+            ><StudioCredits /><span>BEATIT STUDIO</span>
           </div>
         </footer>
       </main>
