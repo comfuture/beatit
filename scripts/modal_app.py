@@ -36,6 +36,9 @@ image = (
     .apt_install("ffmpeg", "git", "build-essential", "pkg-config", "libopus-dev", "libgomp1")
     .workdir("/opt/beatit")
     .uv_sync(str(ROOT), extras=["cuda"], frozen=True, extra_options="--no-dev", uv_version="0.9.26")
+    # Modal's uv launcher runs before Volume mounts. Keep its cache out of /models,
+    # otherwise XDG_CACHE_HOME makes the mount point non-empty before it can mount.
+    .env({"UV_CACHE_DIR": "/tmp/uv-cache"})
     .env(
         {
             **CACHE_ENV,
@@ -88,14 +91,27 @@ model_mounts = {MODEL_DIR: models} if MODEL_STORAGE == "volume" else {}
     scaledown_window=2,
 )
 def prepare_models():
+    import time
+
+    from transcription.modal_models import model_manifest
     from transcription.modal_models import prepare_models as prepare
 
+    started = time.monotonic()
     if MODEL_STORAGE == "volume":
         models.reload()
+    reused = model_manifest() is not None
     manifest = prepare()
     if MODEL_STORAGE == "volume":
         models.commit()
-    return {**manifest, "storage": MODEL_STORAGE}
+    return {
+        **manifest,
+        "storage": MODEL_STORAGE,
+        "preparation": {
+            "cache_reused": reused,
+            "elapsed_seconds": round(time.monotonic() - started, 3),
+            "container_id": os.environ.get("MODAL_TASK_ID"),
+        },
+    }
 
 
 @app.function(
@@ -131,6 +147,12 @@ def transcribe(job: str, attempt: str):
     jobs.reload()
     shared = Path(JOB_DIR) / key
     started = time.monotonic()
+    gpu_info = subprocess.run(
+        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
     with tempfile.TemporaryDirectory(prefix="beatit-") as scratch:
         directory = Path(scratch)
         unpack_input(shared / "input.zip", directory)
@@ -163,6 +185,8 @@ def transcribe(job: str, attempt: str):
                 "gpu": GPU,
                 "model_storage": MODEL_STORAGE,
                 "elapsed_seconds": round(time.monotonic() - started, 2),
+                "gpu_name": gpu_info,
+                "container_id": os.environ.get("MODAL_TASK_ID"),
             }
         finally:
             if process.poll() is None:

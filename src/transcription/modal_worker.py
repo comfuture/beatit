@@ -11,7 +11,13 @@ from uuid import uuid4
 
 import modal
 
-from .colab_artifacts import MAX_RESULT_BYTES, import_output, pack_input, save_json
+from .colab_artifacts import (
+    MAX_RESULT_BYTES,
+    import_output,
+    pack_input,
+    save_json,
+    valid_identifier,
+)
 from .modal_config import (
     APP_NAME,
     ENVIRONMENT,
@@ -92,10 +98,12 @@ def cancel_record(directory: Path):
 def run(directory: Path):
     load_credentials()
     started = time.monotonic()
-    key = directory.name + "/" + uuid4().hex
+    identifier = directory.name if valid_identifier(directory.name) else uuid4().hex
+    key = identifier + "/" + uuid4().hex
     job, attempt = key.split("/")
     calls = []
     transferred = False
+    phase_seconds = {}
     jobs = volume(JOB_VOLUME)
     progress = modal.Dict.from_name(PROGRESS_DICT, environment_name=ENVIRONMENT)
 
@@ -141,14 +149,20 @@ def run(directory: Path):
         (directory / CALL_FILE).unlink(missing_ok=True)
         if manifest.get("fingerprint") != MODEL_FINGERPRINT:
             raise RuntimeError("Modal 모델 버전이 다릅니다. 앱을 다시 배포하세요.")
+        phase_seconds["model_preparation"] = round(time.monotonic() - started, 3)
 
         with tempfile.TemporaryDirectory(prefix=".modal-", dir=directory) as scratch:
             scratch = Path(scratch)
+            phase_started = time.monotonic()
             pack_input(directory, scratch / "input.zip")
+            phase_seconds["pack_input"] = round(time.monotonic() - phase_started, 3)
+            phase_started = time.monotonic()
             report("uploading", 0.03, "Modal로 분석할 오디오를 전송합니다.")
             transferred = True
             with jobs.batch_upload() as upload:
                 upload.put_file(scratch / "input.zip", key + "/input.zip")
+            phase_seconds["upload"] = round(time.monotonic() - phase_started, 3)
+            phase_started = time.monotonic()
             report("allocating", 0.05, "준비된 Modal 이미지에서 GPU를 시작합니다.")
             call = function("transcribe").spawn(job, attempt)
             calls.append(call)
@@ -166,23 +180,39 @@ def run(directory: Path):
                 remote = progress.get(key)
                 if remote:
                     report(remote["stage"], 0.05 + 0.85 * remote["progress"], remote["message"])
+            phase_seconds["gpu_call"] = round(time.monotonic() - phase_started, 3)
+            phase_started = time.monotonic()
             report("downloading", 0.92, "Modal 분석 결과를 가져옵니다.")
             download(jobs, key + "/result.zip", scratch / "result.zip")
+            phase_seconds["download"] = round(time.monotonic() - phase_started, 3)
+            phase_started = time.monotonic()
             report("publishing", 0.97, "분석 결과와 악보 파일을 검증합니다.")
+            provenance.update(
+                app=APP_NAME,
+                environment=ENVIRONMENT,
+                model_fingerprint=manifest["fingerprint"],
+                model_storage=manifest["storage"],
+                preparation_call_id=preparation.object_id,
+                model_preparation=manifest.get("preparation"),
+                call_id=call.object_id,
+            )
             import_output(
                 scratch / "result.zip",
                 directory,
-                {
-                    **provenance,
-                    "app": APP_NAME,
-                    "environment": ENVIRONMENT,
-                    "model_fingerprint": manifest["fingerprint"],
-                    "model_storage": manifest["storage"],
-                    "call_id": call.object_id,
-                    "total_elapsed_seconds": round(time.monotonic() - started, 2),
-                },
+                provenance,
                 backend="modal",
             )
+            phase_seconds["validate_import"] = round(time.monotonic() - phase_started, 3)
+            provenance.update(
+                phase_seconds=phase_seconds,
+                total_elapsed_seconds=round(time.monotonic() - started, 3),
+            )
+            for name in ("analysis.json", "result.json"):
+                path = directory / name
+                if path.is_file():
+                    result = json.loads(path.read_text())
+                    result["execution_runtime"] = provenance
+                    save_json(path, result)
             report("complete", 1, "악보 생성 완료")
     finally:
         cancel()
