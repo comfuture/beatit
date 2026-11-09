@@ -51,12 +51,12 @@ sudo certbot certonly --manual --preferred-challenges http \
 The HTTP-01 auth hook writes a public challenge into Nginx's persistent webroot
 and also copies it into the running app for the initial Tunnel route. Once DNS is
 direct, renewal uses public port 80 independently of application availability.
-The existing Certbot timer renews this certificate and its stored deploy hook
+The existing snap-managed `snap.certbot.renew.timer` renews this certificate and its stored deploy hook
 reloads only `beatit-nginx.service`. Validate the direct route after DNS cutover:
 
 ```sh
 sudo certbot renew --cert-name beatit.changkyun.kim --dry-run
-systemctl list-timers certbot.timer
+systemctl list-timers snap.certbot.renew.timer
 curl -I http://beatit.changkyun.kim/
 curl https://beatit.changkyun.kim/api/health
 ```
@@ -94,6 +94,21 @@ immutable object bytes and ETag come from one manifest. All media responses,
 including errors, are private/no-store. Direct delivery reports
 `X-Beatit-Media: origin`. Original downloads are unchanged. The existing R2 Worker
 and Tunnel remain available for clients with cached proxied DNS and rollback.
+
+### Measured 305.6 MiB transfer
+
+The same 320,415,531-byte MP4 used in the earlier Cloudflare test was uploaded
+from the Mac through trusted direct HTTP/2 HTTPS using the existing login session.
+One PUT transferred all bytes in **67.03 seconds (38.24 Mbps)**; durable MySQL/R2
+publication took a further **6.41 seconds**. The persisted input size and SHA-256
+matched the source. The earlier 39-chunk Cloudflare transfer took approximately
+534 seconds, about eight times as long. This is one observed comparison, not a
+controlled network benchmark or a Chrome throughput measurement. Cached Chrome
+HTTP/3 connections can retain the old proxy route after DNS changes.
+
+An authenticated direct range request returned 206 with the original same-origin
+URL, verified AAC content, a SHA ETag and `X-Beatit-Media: origin`. Anonymous
+access returned 401. See [sanitized measured evidence](benchmarks/direct-origin-2026-11-09.json).
 
 ## Workspace events and session lifetime (issue #15)
 
