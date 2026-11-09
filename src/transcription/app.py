@@ -397,6 +397,9 @@ def create_app(
                 if revision.beat_review is not None
                 else None,
                 owner_id=user["id"],
+                preserve_events=revision.preserve_events,
+                source_generation=revision.source_generation,
+                client_edit_id=revision.client_edit_id,
             )
         except ValueError as error:
             raise HTTPException(409, str(error)) from None

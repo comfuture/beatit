@@ -286,9 +286,25 @@ def make_score(
     options = Options.model_validate(request["options"])
     from .tom_refinement import refine_toms, restore_inferred_toms
 
-    events = restore_inferred_toms(events)
-    tom_report = {"enabled": False}
-    if options.tom_refinement:
+    preserve_events = request.get("preserve_events", False)
+    if preserve_events:
+        saved = published_score(directory, request)
+        # A grid edit keeps the published labels, including automatic provenance
+        # and explicit manual generic toms. It never reclassifies cached audio.
+        tom_report = saved.get("tom_refinement") or {"enabled": False}
+        report_path = directory / saved["generation"] / "tom-refinement.json"
+        if report_path.is_file():
+            tom_report = json.loads(report_path.read_text())
+        options = options.model_copy(
+            update={
+                "bpm": options.bpm if options.bpm is not None else saved["grid"]["bpm"],
+                "offset": options.offset if options.offset is not None else saved["grid"]["offset"],
+            }
+        )
+    else:
+        events = restore_inferred_toms(events)
+        tom_report = {"enabled": False}
+    if options.tom_refinement and not preserve_events:
         progress("refining", 0.78, "저장된 탐 스템에서 고음·저음 탐을 보정합니다.")
         events, tom_report = refine_toms(
             events, directory / "stem-toms.flac", directory / "stem-kick.flac"
@@ -321,13 +337,13 @@ def make_score(
     write_midi(grid["events"], generation / "score.mid", grid["bpm"], grid["meter"])
     write_midi(events, generation / "performance.mid", grid["bpm"], grid["meter"])
     save_json(generation / "events.json", events)
-    if options.tom_refinement:
+    if options.tom_refinement or (preserve_events and tom_report.get("enabled")):
         save_json(generation / "tom-refinement.json", tom_report)
     progress("engraving", 0.87, "출력용 SVG 페이지를 조판합니다.")
     rendered = render(generation / "score.musicxml", generation, options.renderer)
     counts = {name: sum(e["pitch"] == pitch for e in events) for pitch, (name, *_) in KIT.items()}
     warnings = list(analysis.get("warnings", [])) + rendered["warnings"]
-    if options.tom_refinement:
+    if options.tom_refinement and not preserve_events:
         if tom_report["status"] == "missing_stems":
             warnings.append(
                 "탐·킥 스템이 없어 탐 높이를 보정하지 못했습니다. 새 분석을 실행하세요."
@@ -385,13 +401,33 @@ def make_score(
         "warnings": warnings,
         "render_warnings": rendered["warnings"],
         "event_count": len(events),
-        # Review decisions belong to this published edit, just like its events.
-        # The client rechecks them if the timing grid changes.
-        "beat_review": request.get("beat_review"),
+        "beat_review": review_on_grid(request.get("beat_review"), grid),
         "elapsed_seconds": round(time.monotonic() - progress.started, 1),
     }
     publish_score(directory, generation, result, progress)
     return result
+
+
+def published_score(directory: Path, request: dict) -> dict:
+    saved = json.loads((directory / "result.json").read_text())
+    if request.get("source_generation") not in (None, saved["generation"]):
+        raise ValueError("악보가 변경되었습니다. 새 악보를 불러온 뒤 다시 적용하세요.")
+    return saved
+
+
+def review_on_grid(review: dict | None, grid: dict) -> dict | None:
+    """Confirmations cannot refer to the same tick after a grid-anchor change."""
+    if review is None:
+        return None
+    values = [grid["bpm"], grid["offset"], grid["meter"], grid["bar_ticks"], grid["step"]]
+    try:
+        if json.loads(review["grid_key"]) == values:
+            return review
+    except (ValueError, KeyError, TypeError):
+        pass
+    # Match JSON.stringify's representation of integral tempo/offset values.
+    values[:2] = [int(value) if float(value).is_integer() else value for value in values[:2]]
+    return {"grid_key": json.dumps(values, separators=(",", ":")), "beats": []}
 
 
 def publish_score(directory: Path, generation: Path, result: dict, progress: Progress):
@@ -451,7 +487,7 @@ def run(directory: Path):
         return
     if request.get("revision"):
         analysis = json.loads((directory / "analysis.json").read_text())
-        if request.get("reestimate_tempo"):
+        if request.get("reestimate_tempo") and not request.get("preserve_events"):
             progress("rhythm", 0.75, "캐시된 오디오에서 BPM과 비트 위치를 다시 계산합니다.")
             options = Options.model_validate(request["options"])
             drums = directory / "drums.wav"
@@ -468,7 +504,12 @@ def run(directory: Path):
             save_json(directory / "analysis.json", analysis)
         events = request.get("events")
         if events is None:
-            events = json.loads((directory / "events.json").read_text())
+            if request.get("preserve_events"):
+                saved = published_score(directory, request)
+                source = directory / saved["generation"] / "events.json"
+            else:
+                source = directory / "events.json"
+            events = json.loads(source.read_text())
         # Edits are persisted only once their generation has rendered successfully.
         make_score(directory, request, analysis, events, progress)
         save_json(directory / "events.json", events)
