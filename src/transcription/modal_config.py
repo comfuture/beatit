@@ -20,6 +20,10 @@ MODEL_CONTRACT = (
     "adtof:85c192e78f716ea0b111cc8a5ee4a8f6a3a4f8a9"
 )
 MODEL_FINGERPRINT = hashlib.sha256(MODEL_CONTRACT.encode()).hexdigest()
+IMAGE_NAME = os.environ.get(
+    "BEATIT_MODAL_IMAGE",
+    f"{APP_NAME}-processing:py312-cu128-{MODEL_STORAGE}-{MODEL_FINGERPRINT[:12]}-v1",
+)
 MANIFEST = MODEL_FINGERPRINT + "/manifest.json"
 CACHE_ENV = {
     "XDG_CACHE_HOME": MODEL_DIR + "/" + MODEL_FINGERPRINT,
