@@ -99,8 +99,11 @@ reference. Rejected admissions make completed uploads eligible for cleanup; hard
 crashes or database outages retain the journal for conservative recovery after
 24 hours. Uncertain storage failures retain a five-minute grace period. The
 collector skips in-flight upload locks and checks committed references under the
-same publication fence before deleting bytes. A collector that wins the race
-prevents a late publisher from referencing the removed key. Reused objects must
+same publication fence. Before deleting bytes it commits a non-publishable
+`collecting` state; a crash or rollback of the later cleanup transaction retains
+that fence and the retriable journal. Migration 005 appends this state with a
+restart-safe enum modification. A collector that wins the race prevents a late
+publisher from referencing the removed key. Reused objects must
 still have a committed reference. Do not apply an arbitrary bucket expiry rule
 to live artifacts; orphan cleanup uses this manifest-aware journal instead.
 
