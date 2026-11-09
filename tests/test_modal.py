@@ -162,7 +162,7 @@ def rpc(tmp_path, monkeypatch):
             if isinstance(self.result, BaseException):
                 raise self.result
             if self.polls == 1:
-                raise modal_worker.modal.exception.TimeoutError()
+                raise TimeoutError()
             return self.result
 
         def cancel(self, *, terminate_containers):

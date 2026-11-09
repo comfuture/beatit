@@ -142,7 +142,7 @@ def run(directory: Path):
             try:
                 manifest = preparation.get(timeout=1)
                 break
-            except modal.exception.TimeoutError:
+            except (TimeoutError, modal.exception.TimeoutError):
                 if time.monotonic() > deadline:
                     raise TimeoutError("Modal 모델 준비 시간이 초과되었습니다.") from None
         calls.clear()
@@ -174,7 +174,7 @@ def run(directory: Path):
                     calls.clear()
                     (directory / CALL_FILE).unlink(missing_ok=True)
                     break
-                except modal.exception.TimeoutError:
+                except (TimeoutError, modal.exception.TimeoutError):
                     if time.monotonic() > deadline:
                         raise TimeoutError("Modal 분석 대기 시간이 초과되었습니다.") from None
                 remote = progress.get(key)
