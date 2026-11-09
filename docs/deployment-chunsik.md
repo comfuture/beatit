@@ -16,8 +16,8 @@ recorded in [the 2026-11-09 managed verification record](benchmarks/multiuser-ma
 | --- | --- |
 | Checkout/deployment directory | `/home/ubuntu/services/beatit-multiuser` |
 | Compose project | `beatit-multiuser` |
-| Application image | `beatit:issue7-dcef260` |
-| Observed image ID | `sha256:1bb1aeec09fe0ab91fb891f44eb4eb18163aeef37e23f38c76269b9b5481bd62` |
+| Application image | `beatit:issue7-7c00a2c` |
+| Observed image ID | `sha256:b62ae5bfbfd4aaedf21000420178fffc24e48766d55207c88e9fe939a095b543` |
 | Platform/user | ARM64, UID 10001 |
 | Private origin | `http://localhost:18001` |
 | Public HTTPS origin | `https://beatit.changkyun.kim` |
@@ -107,7 +107,7 @@ database. All 41 object hashes and both owners' artifact access were checked, th
 the exact synthetic records and objects were removed. All 11 checked table counts
 returned to zero before real users or legacy imports were added.
 
-## Real browser transcription and scratch recovery
+## Initial browser transcription and scratch recovery
 
 The new original eight-second `Issue7-owner-A-8s.wav` submitted through the signed-in
 browser completed on Modal with CUDA provenance. Reported processing time was
@@ -131,15 +131,46 @@ audio ranges returned 206, and waveform/layout returned 200. Nine current artifa
 sizes and SHA-256 values matched the R2-backed manifests, and all three revisions
 remained in SQL.
 
-During downtime, authentication fails closed and clears the workspace. This
-verification establishes reopening from saved history after recovery; it does not
-claim automatic restoration of the previously selected session. The final browser
+At this initial `dcef260` checkpoint, a temporary auth connection failure cleared
+the workspace. Reopening from saved history was verified before permalink and
+reconnection support were added; the current behavior is described below. The final browser
 screenshot is retained privately in `work/issue7/live-restored-score.png`.
 
 The verified `dcef260` CI run passed 205 non-MySQL Python tests and 68 MySQL tests
 (273 total), plus 45 frontend unit tests and 51 Playwright tests. The CI and managed
 runtime checks establish different checkpoints; the second real Google account
 and provider-native backup retention remain unverified.
+
+## Permalinks, direct playback and quiet reconnects
+
+The current origin image is `beatit:issue7-7c00a2c`; the R2 media Worker version is
+`31fd3ed7-8682-4712-9f3b-882155bf0bd1`. Follow-up evidence is recorded in
+[the deployed follow-up record](benchmarks/multiuser-followup-2026-11-09.json).
+
+Loaded/uploaded sessions use `/sessions/{id}`. The URL restores the session on
+reload and after Google login, without relying on browser storage or history-list
+membership. Missing/deleted/foreign-owner IDs fail closed through the same API
+owner checks. The real personal account completed the permalink logout/login
+round trip. Medium screens (768–1279px) keep score settings inline and navigation
+collapsed; mobile closes both panels, including desktop/tablet transitions.
+
+Playback now uses the authenticated same-origin R2 Worker and SHA-validated AAC
+96 kbps fast-start derivatives. All seven completed jobs received previews without
+changing original manifests, results, timestamps, options or revisions. The long
+recording's playback WAV was 48,529,490 bytes; its AAC preview is 3,365,915 bytes
+(93.06% fewer bytes), with the same 275.11-second duration. A Mac Chrome sample
+advanced 53.4 seconds with wall time and adequate buffered data; the operator also
+confirmed uninterrupted streaming. Original WAV downloads remain unchanged.
+See [media delivery](media-delivery.md) for authorization, fallback and measurement
+boundaries.
+
+The login/new-session screens retain core actions and required constraints.
+Temporary auth/network/5xx failures preserve an already verified editor and retry
+reads, while an initial unknown identity remains gated. Definitive null/401 still
+clears the account; failed writes preserve drafts and require manual retry.
+A 15-second origin stop showed only the neutral reconnect status, retained the
+editor, and automatically recovered without raw signal/auth errors. Audio
+continuity during that restart was not asserted because the player was paused.
 
 ## Stopped legacy installation
 

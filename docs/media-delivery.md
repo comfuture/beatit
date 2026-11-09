@@ -8,10 +8,11 @@ body flows from R2 to the Worker to the browser.
 The earlier `dcef260`
 [managed deployment record](benchmarks/multiuser-managed-2026-11-09.json) precedes
 this media change. The media Worker was subsequently deployed as version
-`31fd3ed7-8682-4712-9f3b-882155bf0bd1`, including `audio/mp4` support. At this
-checkpoint, the new origin image, existing-job AAC backfill and repeat browser
-playback validation were still pending. Direct Worker delivery alone did not
-eliminate the raw-audio buffering reproduced below.
+`31fd3ed7-8682-4712-9f3b-882155bf0bd1`, including `audio/mp4` support. The current
+origin image is `beatit:issue7-7c00a2c`; seven completed jobs were backfilled and
+AAC browser playback was verified. See the
+[follow-up record](benchmarks/multiuser-followup-2026-11-09.json). Direct Worker
+delivery alone did not eliminate the earlier raw-audio buffering reproduced below.
 
 ## Request and authorization path
 
@@ -114,7 +115,7 @@ stereo/44.1-kHz output and size below one eighth of that fixture's WAV. These ar
 encoder/format regression checks, not a production quality evaluation, a guaranteed
 compression ratio for arbitrary audio, or proof of smooth browser playback. The
 AAC-aware Worker tests passed 22 cases and the focused backend run passed 36 tests;
-the deployed long-song browser outcome remains a separate checkpoint.
+the deployed long-song browser result is recorded below.
 
 ### Backfill an existing completed job
 
@@ -153,8 +154,8 @@ enqueue inference. Before publication it rechecks the owner, completed result an
 original hashes under transaction locks; a concurrent job/audio change aborts the
 backfill for a later retry. Repeating an unchanged backfill reuses matching outputs.
 Bulk backfill must enumerate the intended exact job/owner pairs, not infer a
-shared owner for unrelated records. At this checkpoint the seven-job production
-backfill had not yet been recorded as complete.
+shared owner for unrelated records. The seven-job production backfill completed
+with no encoding failures; original score state and manifests were verified unchanged.
 
 ## Streaming and ranges
 
@@ -309,8 +310,17 @@ buffering and `readyState=2`, with playback time 4.435 seconds and buffered end
 streaming therefore did not, by itself, establish smooth raw-WAV playback on this
 browser/network path.
 
-The AAC derivatives address the byte rate required for preview listening while
-preserving original WAVs. Their size, public delivery, seeks, buffering events,
-audio/drum synchronization and sustained Mac Chrome playback must be measured
-after the new origin image and backfill are in place. No final AAC browser metrics
-or no-stutter claim is recorded here yet.
+After backfill, that recording's AAC preview was 3,365,915 bytes rather than
+48,529,490 WAV bytes, a 93.06% reduction. Mac Chrome exposed `readyState=4`; a
+53.386-second observation advanced the media clock from 0.071 to 53.405 seconds
+without buffer starvation, and the recording eventually fully buffered through
+275.11 seconds. The operator confirmed uninterrupted streaming. This is a
+functional observation of that client/path, not a throughput or quality guarantee.
+
+The eight-second fixture's 79,293-byte AAC was then delivered through the public
+Worker in 1.427 seconds, with first byte at 1.031 seconds. Its complete SHA-256
+matched the selected preview manifest. Full/partial/suffix reads, HEAD, 416,
+anonymous denial, cross-owner denial and revocation of the next range request
+passed against real OCI/R2 using two tagged synthetic sessions. Those identities
+were removed without deleting source objects. The probe does not establish a
+latency distribution, and its byte rate includes authorization/first-byte delay.
