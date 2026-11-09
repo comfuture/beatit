@@ -60,7 +60,7 @@ const percent = computed(() =>
 </script>
 
 <template>
-  <section class="process-panel" :class="{ compact }" aria-label="분석 과정">
+  <section v-if="job || uploading" class="process-panel" :class="{ compact }" aria-label="분석 과정">
     <div class="section-label">
       <span>PROCESSING</span
       ><UBadge
@@ -121,11 +121,7 @@ const percent = computed(() =>
     />
     <p v-if="job?.error" class="process-error">{{ job.error }}</p>
     <div class="process-actions">
-      <small>{{
-        job?.progress.elapsed_seconds
-          ? `${Math.round(job.progress.elapsed_seconds)}초 경과`
-          : modal ? "Modal GPU에서 분석합니다" : colab ? "Colab GPU 연결 후 분석합니다" : "첫 실행 시 모델을 다운로드합니다"
-      }}</small>
+      <small v-if="job?.progress.elapsed_seconds">{{ Math.round(job.progress.elapsed_seconds) }}초 경과</small>
       <UButton
         v-if="active"
         label="취소"

@@ -10,6 +10,7 @@ import { validateOptions } from "~/utils/rhythm";
 import { mergeBeatReview, reviewAfterEdit } from "~/utils/beatReview";
 import { connectionUnavailable, runtimeStatus } from "~/utils/execution";
 import { sessionIdFromPath, sessionPath } from "~/utils/sessionLocation";
+import { actionErrorMessage, isTransientReadError } from "~/utils/connection";
 
 export function useStudio(userId: string, onUnauthorized: () => void) {
   const storageKey = `beatit-session:${userId}`;
@@ -94,6 +95,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   let disposed = false;
   let selection = 0;
   let systemRefreshedAt = 0;
+  let initialized = false;
+  let retrySelection = false;
   const pendingRequests = new Set<AbortController>();
   let uploadRequest: XMLHttpRequest | undefined;
   const assertActive = () => {
@@ -114,7 +117,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       assertActive();
       if (response.status === 401) {
         onUnauthorized();
-        throw new DOMException("Session expired", "AbortError");
+        throw Object.assign(new DOMException("Session expired", "AbortError"), { status: 401 });
       }
       if (!response.ok) {
         const body = await response.json().catch(() => null);
@@ -136,8 +139,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     }
   }
   function report(reason: unknown) {
-    if (disposed || (reason instanceof DOMException && reason.name === "AbortError")) return;
-    error.value = reason instanceof Error ? reason.message : String(reason);
+    if (disposed || (reason as { status?: number } | null)?.status === 401) return;
+    error.value = actionErrorMessage(reason);
   }
   function fileUrl(name: string, download = false) {
     return `/api/jobs/${current.value?.id}/files/${encodeURIComponent(name)}?v=${encodeURIComponent(result.value?.generation || "")}${download ? "&download=true" : ""}`;
@@ -184,6 +187,12 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       }
     }
   }
+  async function initializeLocation() {
+    initialized = true;
+    // Do not discard a file the user picked while startup reads were pending.
+    if (window.location.pathname === "/") commitLocation("/", "none");
+    else await openLocation();
+  }
   async function poll() {
     if (disposed) return;
     const token = selection;
@@ -192,25 +201,33 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       if (!system.value || Date.now() - systemRefreshedAt >= 10000)
         await refreshSystem();
       await refreshHistory();
-      if (
+      if (!initialized) await initializeLocation();
+      else if (
         id &&
-        current.value &&
-        (["running", "queued"].includes(current.value.status) ||
-          (current.value.result &&
-            generation !== `${id}:${current.value.result.generation}`))
+        (retrySelection || (current.value &&
+          (["running", "queued"].includes(current.value.status) ||
+            (current.value.result && generation !== `${id}:${current.value.result.generation}`))))
       ) {
         await showJob(await api<Job>(`/api/jobs/${id}`), token);
+        if (token === selection && !disposed) {
+          retrySelection = false;
+          loadingEvents.value = false;
+          localStorage.setItem(storageKey, id);
+        }
       }
-      online.value = true;
-    } catch (e) {
+      online.value = !retrySelection;
+    } catch (reason) {
       online.value = false;
-      report(e);
+      // Failed background reads never replace editor/validation errors. The
+      // next poll retries reads only; write operations remain explicitly manual.
+      if (!isTransientReadError(reason) && !error.value) report(reason);
     }
     if (!disposed) timer = setTimeout(poll, 1800);
   }
   async function selectJob(id: string, locationMode: LocationMode = "push") {
     const path = sessionPath(id);
     const token = ++selection;
+    retrySelection = false;
     activeId.value = id;
     current.value = null;
     generation = "";
@@ -230,14 +247,18 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       if (token === selection) {
         if ((e as { status?: number }).status === 404)
           error.value = "세션을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 주소입니다.";
-        else report(e);
+        else if (isTransientReadError(e)) {
+          retrySelection = true;
+          online.value = false;
+        } else report(e);
       }
     } finally {
-      if (token === selection) loadingEvents.value = false;
+      if (token === selection) loadingEvents.value = retrySelection;
     }
   }
   function newSession(locationMode: LocationMode = "push") {
     selection++;
+    retrySelection = false;
     activeId.value = null;
     current.value = null;
     generation = "";
@@ -495,14 +516,15 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       await refreshSystem();
       online.value = true;
       await refreshHistory();
-      // The permalink is authoritative; '/' deliberately starts a blank session.
-      // A valid deep link is checked by the server even outside the latest history.
-      await openLocation();
+      // A valid deep link is owner-checked even outside the latest history.
+      await initializeLocation();
+      online.value = !retrySelection;
       if (system.value && !system.value.ffmpeg)
         error.value =
           "FFmpeg/ffprobe가 없습니다. README의 설치 안내를 확인하세요.";
     } catch (e) {
-      report(e);
+      online.value = false;
+      if (!isTransientReadError(e)) report(e);
     } finally {
       loading.value = false;
       if (!disposed) timer = setTimeout(poll, 1800);

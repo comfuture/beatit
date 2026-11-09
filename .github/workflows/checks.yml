@@ -48,13 +48,23 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install FFmpeg for real playback encoding tests
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            if [ "$RUNNER_OS" = Linux ]; then
+              sudo apt-get update -qq
+              sudo apt-get install -y --no-install-recommends ffmpeg
+            else
+              brew install ffmpeg
+            fi
+          fi
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev --extra cpu
-      - run: uv run ruff check src tests scripts
-      - run: uv run ruff format --check src tests scripts
-      - run: uv run pytest -q -m 'not mysql'
+      - run: uv run --no-sync ruff check src tests scripts
+      - run: uv run --no-sync ruff format --check src tests scripts
+      - run: uv run --no-sync pytest -q -m 'not mysql'
   mysql-integration:
     runs-on: ubuntu-latest
     services:
@@ -77,8 +87,12 @@ jobs:
       DRUM_EXECUTION_BACKEND: local
     steps:
       - uses: actions/checkout@v4
+      - name: Install FFmpeg for managed playback integration tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev --extra cpu
-      - run: uv run pytest -q -m mysql
+      - run: uv run --no-sync pytest -q -m mysql

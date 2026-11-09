@@ -38,15 +38,9 @@ function select(event: Event) {
 
 <template>
   <section class="source-panel">
-    <div class="panel-toolbar">
-      <span><UIcon name="i-lucide-folder-input" /> 소스 가져오기</span
-      ><span class="toolbar-caption">NEW SESSION</span>
-    </div>
     <div class="source-body">
       <div class="source-heading">
-        <span class="eyebrow">AUDIO TO NOTATION</span>
-        <h1>새로운 드럼 세션</h1>
-        <p>원본을 불러오고, 리듬을 분석하고, 악보를 다듬으세요.</p>
+        <h1>새 세션</h1>
       </div>
       <input
         ref="input"
@@ -70,12 +64,12 @@ function select(event: Event) {
           ><UIcon :name="file ? 'i-lucide-file-audio' : 'i-lucide-import'"
         /></span>
         <strong>{{
-          file ? file.name : "오디오 또는 비디오를 여기에 놓으세요"
+          file ? file.name : "오디오·비디오 파일 선택"
         }}</strong>
         <span>{{
           file
             ? `${(file.size / 1024 ** 2).toFixed(1)} MB · 클릭하여 파일 변경`
-            : "또는 클릭하여 파일 선택"
+            : "파일을 끌어다 놓을 수도 있습니다."
         }}</span>
         <small>WAV · MP3 · FLAC · M4A · MP4 · MOV</small>
       </button>
@@ -106,32 +100,9 @@ function select(event: Event) {
         size="lg"
         @click="$emit('upload')"
       />
-      <div class="source-notes">
-        <UIcon :name="remoteExecution ? 'i-lucide-cloud' : 'i-lucide-hard-drive'" />
-        <div>
-          <p>{{ remoteExecution
-            ? `업로드한 오디오는 ${system?.execution_label}에서 분석합니다. 원본과 결과는 서버에 보관됩니다.`
-            : "오디오와 분석 결과는 실행 중인 호스트에 저장됩니다."
-          }}</p>
-          <p v-if="remoteExecution" role="status">{{ runtimeStatus(system) }}</p>
-        </div>
-      </div>
-      <div class="workflow-overview">
-        <div>
-          <UIcon name="i-lucide-audio-lines" /><strong>01</strong
-          ><span>분리 & 분석</span>
-        </div>
-        <UIcon name="i-lucide-chevron-right" />
-        <div>
-          <UIcon name="i-lucide-file-music" /><strong>02</strong
-          ><span>악보 검토</span>
-        </div>
-        <UIcon name="i-lucide-chevron-right" />
-        <div>
-          <UIcon name="i-lucide-sliders-horizontal" /><strong>03</strong
-          ><span>비트 편집</span>
-        </div>
-      </div>
+      <p v-if="remoteExecution" class="source-notes" role="status">
+        <UIcon name="i-lucide-cloud" />{{ runtimeStatus(system) }}
+      </p>
     </div>
   </section>
 </template>
