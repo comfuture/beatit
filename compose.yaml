@@ -23,6 +23,7 @@ services:
       BEATIT_DATABASE_URL: ${BEATIT_DATABASE_URL:?Set the dedicated managed MySQL connection URL}
       BEATIT_DB_POOL_SIZE: ${BEATIT_DB_POOL_SIZE:-6}
       BEATIT_MEDIA_BASE_URL: ${BEATIT_MEDIA_BASE_URL:-}
+      BEATIT_UPLOAD_MODE: ${BEATIT_UPLOAD_MODE:-chunked}
       BEATIT_S3_ENDPOINT: ${BEATIT_S3_ENDPOINT:?Set the private object storage endpoint}
       BEATIT_S3_REGION: ${BEATIT_S3_REGION:-auto}
       BEATIT_S3_BUCKET: ${BEATIT_S3_BUCKET:?Set the private Beatit bucket}
