@@ -125,3 +125,94 @@ def test_invalid_media_path_is_rejected_before_database_or_auth_initialization(m
     monkeypatch.setenv("BEATIT_MEDIA_BASE_URL", base)
     with pytest.raises(RuntimeError, match="must be empty or /media"):
         create_app(start_worker=False, store=SimpleNamespace(db=None))
+
+
+def test_direct_origin_preserves_full_range_head_and_if_range_playback(owned_media):
+    _, owner, identifier = owned_media
+    path = f"/media/{identifier}/audio.wav"
+    original = b"private audio.wav"
+    response = owner.get(path)
+    assert response.status_code == 200 and response.content == original
+    assert response.headers["x-beatit-media"] == "origin"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["vary"] == "Cookie"
+    assert response.headers["etag"] == '"' + hashlib.sha256(original).hexdigest() + '"'
+    partial = owner.get(path, headers={"Range": "bytes=2-5"})
+    assert partial.status_code == 206 and partial.content == original[2:6]
+    assert partial.headers["content-range"] == f"bytes 2-5/{len(original)}"
+    head = owner.head(path)
+    assert head.status_code == 200 and not head.content
+    assert int(head.headers["content-length"]) == len(original)
+    changed = owner.get(path, headers={"Range": "bytes=2-5", "If-Range": '"stale"'})
+    assert changed.status_code == 200 and changed.content == original
+    assert owner.get(path, headers={"Range": "bytes=999-"}).status_code == 416
+
+
+def test_direct_origin_rechecks_owner_and_revocation_and_restricts_paths(owned_media):
+    app, owner, identifier = owned_media
+    path = f"/media/{identifier}/audio.wav"
+    token, _ = app.state.auth.create_session({"sub": "origin-b", "email": "b@example.test"})
+    with TestClient(app, cookies={app.state.auth.settings.cookie_name: token}) as other:
+        anonymous = TestClient(app)
+        try:
+            for client, expected in [(anonymous, 401), (other, 404)]:
+                response = client.get(path)
+                assert response.status_code == expected
+                assert response.headers["cache-control"] == "private, no-store"
+                assert response.headers["vary"] == "Cookie"
+                assert response.headers["cross-origin-resource-policy"] == "same-origin"
+            assert other.head(path).status_code == 404
+            assert owner.get(path, headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+            assert owner.get(path + "?arbitrary=1").status_code == 404
+            assert owner.get(f"/media/{identifier}/input").status_code == 404
+            assert owner.get(f"/media/{identifier}/audio-preview.m4a").status_code == 404
+            old_cookie = dict(owner.cookies)
+            assert owner.post("/api/auth/logout").status_code == 204
+            owner.cookies.update(old_cookie)
+            assert owner.get(path, headers={"Range": "bytes=0-3"}).status_code == 401
+        finally:
+            anonymous.close()
+
+
+def test_direct_origin_uses_one_immutable_manifest_during_artifact_replacement(
+    owned_media, monkeypatch
+):
+    app, owner, identifier = owned_media
+    store = app.state.store
+    original = b"private audio.wav"
+    select = store.playback_manifest
+
+    def replace_after_selection(*args, **kwargs):
+        manifest, content_type = select(*args, **kwargs)
+        (store.directory(identifier) / "audio.wav").write_bytes(b"replacement audio")
+        store.update(identifier, "completed")
+        return manifest, content_type
+
+    monkeypatch.setattr(store, "playback_manifest", replace_after_selection)
+    response = owner.get(f"/media/{identifier}/audio.wav")
+    assert response.status_code == 200 and response.content == original
+    assert response.headers["etag"] == '"' + hashlib.sha256(original).hexdigest() + '"'
+
+
+def test_direct_origin_keeps_verified_aac_preview_selection(
+    tmp_path, authenticated_app, authenticated_client
+):
+    import numpy as np
+    import soundfile as sf
+
+    from transcription.playback_preview import prepare_playback_previews
+
+    app = authenticated_app(tmp_path)
+    with authenticated_client(app) as owner:
+        identifier = owner.post("/api/jobs", files={"file": ("audio.wav", b"source")}).json()["id"]
+        directory = app.state.store.directory(identifier)
+        sf.write(directory / "audio.wav", np.zeros(8000, dtype=np.float32), 8000)
+        report = prepare_playback_previews(directory)
+        assert report["created"] == ["audio-preview.m4a"]
+        (directory / "result.json").write_text('{"generation":"render-1","duration":1}')
+        app.state.store.update(identifier, "completed")
+        expected = (directory / "audio-preview.m4a").read_bytes()
+        response = owner.get(f"/media/{identifier}/audio.wav")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "audio/mp4"
+        assert response.content == expected

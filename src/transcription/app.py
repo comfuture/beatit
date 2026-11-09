@@ -21,7 +21,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from pymysql import Error as DatabaseError
@@ -32,8 +32,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .access_log import install_auth_query_redaction
 from .auth import install_auth, require_user
 from .chunk_uploads import CHUNK_BYTES, ChunkUploads
+from .events import WorkspaceEvents
 from .execution import default_engine, execution_capabilities
 from .models import Options, Revision, ScoreMetadata
+from .origin_media import install_origin_media
 from .pipeline import MAX_DURATION, save_json
 from .runtime import capabilities
 from .score_layout import score_layout
@@ -96,6 +98,21 @@ def create_app(
         raise RuntimeError("BEATIT_MEDIA_BASE_URL must be empty or /media.")
     store = store or JobStore(data_root or Path(os.environ.get("DRUM_DATA_DIR", "data")))
     uploads = ChunkUploads(store)
+    upload_mode = os.environ.get("BEATIT_UPLOAD_MODE", "chunked")
+    if upload_mode not in {"chunked", "direct"}:
+        raise RuntimeError("BEATIT_UPLOAD_MODE must be chunked or direct.")
+
+    def system_info():
+        return {
+            **execution_capabilities(capabilities()),
+            "max_upload_bytes": upload_limit(),
+            "upload_chunk_bytes": CHUNK_BYTES,
+            "upload_mode": upload_mode,
+            "max_duration_seconds": MAX_DURATION,
+            "media_base_url": media_base_url,
+        }
+
+    events = WorkspaceEvents(store, system_info)
 
     async def clean_uploads():
         while True:
@@ -116,12 +133,14 @@ def create_app(
             cleaner.cancel()
             with suppress(asyncio.CancelledError):
                 await cleaner
+            await events.close()
             if start_worker:
                 store.stop()
             store.close()
 
     app = FastAPI(title="Drum Score", lifespan=lifespan)
     app.state.store = store
+    app.state.events = events
     install_auth(app, store.db, service=auth_service)
     app.add_middleware(
         TrustedHostMiddleware,
@@ -142,8 +161,11 @@ def create_app(
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
-        if request.url.path.startswith("/api/"):
+        if request.url.path.startswith(("/api/", "/media/")):
             response.headers["Cache-Control"] = "private, no-store"
+        if request.url.path.startswith("/media/"):
+            response.headers["Vary"] = "Cookie"
+            response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
         return response
 
     async def unavailable(request, error):
@@ -182,14 +204,24 @@ def create_app(
         return {"status": "ok"}
 
     @app.get("/api/system")
-    def system(user: dict = Depends(require_user)):
-        return {
-            **execution_capabilities(capabilities()),
-            "max_upload_bytes": upload_limit(),
-            "upload_chunk_bytes": CHUNK_BYTES,
-            "max_duration_seconds": MAX_DURATION,
-            "media_base_url": media_base_url,
-        }
+    async def system(user: dict = Depends(require_user)):
+        return await events.system_snapshot()
+
+    @app.get("/api/events")
+    async def workspace_events(
+        request: Request, job_id: str | None = None, user: dict = Depends(require_user)
+    ):
+        if job_id:
+            await run_in_threadpool(get_job, job_id, user)
+        subscription = await events.subscribe(user["id"], job_id)
+        cleanup = BackgroundTasks()
+        cleanup.add_task(events.unsubscribe, subscription)
+        return StreamingResponse(
+            events.stream(subscription, request),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "private, no-store", "X-Accel-Buffering": "no"},
+            background=cleanup,
+        )
 
     @app.get("/api/jobs")
     def list_jobs(q: str = "", project_id: str | None = None, user: dict = Depends(require_user)):
@@ -259,6 +291,12 @@ def create_app(
         if upload_offset % CHUNK_BYTES:
             raise HTTPException(409, "업로드 조각의 시작 위치가 올바르지 않습니다.")
         return await uploads.receive(user["id"], identifier, upload_offset, request)
+
+    @app.put("/api/uploads/{identifier}")
+    async def upload_direct(identifier: str, request: Request, user: dict = Depends(require_user)):
+        if upload_mode != "direct":
+            raise HTTPException(409, "이 서버는 분할 업로드를 사용합니다.")
+        return await uploads.receive_direct(user["id"], identifier, request)
 
     @app.post("/api/uploads/{identifier}/complete", status_code=202)
     def complete_upload(
@@ -472,6 +510,8 @@ def create_app(
             return waveform_peaks(str(path), stat.st_mtime_ns, stat.st_size)
         except (RuntimeError, ValueError):
             raise HTTPException(422, "파형을 읽을 수 없습니다.") from None
+
+    install_origin_media(app, store)
 
     if (STATIC / "index.html").is_file():
 

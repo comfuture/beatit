@@ -28,7 +28,9 @@ def main():
 
         from .app import create_app
 
-        uvicorn.run(create_app(args.data_dir), host=args.host, port=args.port)
+        uvicorn.run(
+            create_app(args.data_dir), host=args.host, port=args.port, timeout_graceful_shutdown=10
+        )
     elif args.command == "doctor":
         import json
 
