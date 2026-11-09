@@ -312,3 +312,45 @@ for (const viewport of [
     await page.screenshot({ path: `test-results/session-layout-${viewport.width}.png`, fullPage: true });
   });
 }
+
+async function expectCollapsedMobileWorkspace(page: Page) {
+  await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+  await expect(page.locator(".inspector")).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "워크스페이스", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "악보 설정", exact: true })).toHaveCount(0);
+  await expect(page.locator('aside[data-slot="root"]')).toHaveAttribute("data-state", "collapsed");
+}
+
+test("desktop to tablet to mobile resize never opens navigation without a toggle", async ({ page }) => {
+  await accountApi(page, "A");
+  await page.goto(`/sessions/${"a".repeat(32)}`);
+  await expect(page.locator('aside[data-slot="root"]')).toHaveAttribute("data-state", "expanded");
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await expect(page.locator(".inspector")).toBeVisible();
+  await expect(page.locator('aside[data-slot="root"]')).toHaveAttribute("data-state", "collapsed");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectCollapsedMobileWorkspace(page);
+  await page.getByRole("button", { name: "사이드바 토글" }).click();
+  await expect(page.getByRole("dialog", { name: "워크스페이스", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expectCollapsedMobileWorkspace(page);
+});
+
+test("signing in again on tablet then resizing mobile keeps both panels closed", async ({ page }) => {
+  const api = await accountApi(page, "A");
+  const path = `/sessions/${"a".repeat(32)}`;
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await page.route("**/api/auth/google?*", async (route) => {
+    api.switchTo("A");
+    return route.fulfill({ status: 302, headers: { location: path } });
+  });
+  await page.goto(path);
+  await expect(page.locator(".inspector")).toBeVisible();
+  await page.getByRole("button", { name: "로그아웃", exact: true }).click();
+  await page.getByRole("link", { name: "Google로 시작하기" }).click();
+  await expect(page.locator(".inspector")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "워크스페이스", exact: true })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectCollapsedMobileWorkspace(page);
+  await page.screenshot({ path: "test-results/session-layout-auth-transition-mobile.png", fullPage: true });
+});

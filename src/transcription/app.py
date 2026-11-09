@@ -312,14 +312,16 @@ def create_app(
         if source not in JOB_AUDIO:
             raise HTTPException(404, "오디오가 없습니다.")
         try:
-            manifest = store.artifact_manifest(identifier, source, owner_id=user["id"])
+            manifest, content_type = store.playback_manifest(
+                identifier, source, owner_id=user["id"]
+            )
         except KeyError:
             raise HTTPException(404, "오디오가 없습니다.") from None
         return {
             "object_key": manifest["object_key"],
             "size": manifest["size"],
             "sha256": manifest["sha256"],
-            "content_type": "audio/flac" if source.endswith(".flac") else "audio/wav",
+            "content_type": content_type,
         }
 
     @app.get("/api/jobs/{identifier}/files/{filename}")

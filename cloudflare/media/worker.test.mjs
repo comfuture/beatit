@@ -115,3 +115,15 @@ test('storage and auth outages are recoverable 503 responses', async () => {
   assert.ok(!(await response.text()).includes('private storage details'));
 });
 test('empty range means a full response', () => assert.equal(byteRange(null, 10), null));
+
+test('source URLs can serve the authorized compact AAC preview without exposing the original key', async () => {
+  const f = fixture();
+  const response = await serveMedia(f.request(), f.env, async () => Response.json({
+    object_key: 'owner/job/immutable/audio-preview.m4a', size: bytes.length,
+    sha256: 'f'.repeat(64), content_type: 'audio/mp4',
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Content-Type'), 'audio/mp4');
+  assert.equal(f.reads[0].key, 'owner/job/immutable/audio-preview.m4a');
+  assert.equal(await response.text(), '0123456789');
+});

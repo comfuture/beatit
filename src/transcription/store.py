@@ -13,6 +13,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import weakref
@@ -23,13 +24,22 @@ from .database import Database
 from .models import ScoreMetadata
 from .object_storage import ObjectStorage, file_digest
 from .pipeline import save_json
+from .playback_preview import (
+    PLAYBACK_PREVIEWS,
+    PREVIEW_FILES,
+    PREVIEW_METADATA,
+    prepare_playback_previews,
+    preview_matches,
+)
 
 TERMINAL = {"completed", "failed", "cancelled"}
 QUEUED = {"stage": "queued", "progress": 0, "message": "분석 대기 중"}
 _JSON_STATE = {"request.json", "progress.json", "result.json", "error.json"}
-_MEDIA = {"input", "audio.wav", "drums.wav", "worker.log", "analysis.json", "events.json"} | {
-    f"stem-{name}.flac" for name in ("kick", "snare", "toms", "hh", "cymbals")
-}
+_MEDIA = (
+    {"input", "audio.wav", "drums.wav", "worker.log", "analysis.json", "events.json"}
+    | PREVIEW_FILES
+    | {f"stem-{name}.flac" for name in ("kick", "snare", "toms", "hh", "cymbals")}
+)
 
 
 class JobStore:
@@ -291,7 +301,16 @@ class JobStore:
             # A concurrent garbage collector can never delete a republished key.
             key = f"jobs/{identifier}/{uuid4().hex}/{digest}/{relative}"
             if not existing or existing["sha256"] != digest:
-                self.objects.put(key, path)
+                try:
+                    self.objects.put(key, path)
+                except Exception as error:
+                    if relative not in PREVIEW_FILES:
+                        raise
+                    logging.warning(
+                        "Optional playback object upload failed (%s); original audio remains available",
+                        type(error).__name__,
+                    )
+                    continue
             else:
                 key = existing["object_key"]
             manifests.append(
@@ -368,6 +387,101 @@ class JobStore:
         if manifest is None:
             raise KeyError(relative)
         return manifest
+
+    def playback_manifest(self, identifier: str, source: str, owner_id=None):
+        original = self.artifact_manifest(identifier, source, owner_id)
+        preview = PLAYBACK_PREVIEWS.get(source)
+        if preview:
+            query = """SELECT a.*, JSON_EXTRACT(j.payloads, '$."playback-previews.json"') AS preview_metadata
+                       FROM beatit.artifacts a JOIN beatit.jobs j ON j.id=a.job_id
+                       WHERE a.job_id=%s AND a.path=%s"""
+            arguments = [identifier, preview]
+            if owner_id is not None:
+                query += " AND j.owner_id=%s"
+                arguments.append(owner_id)
+            with self.connect() as connection:
+                candidate = connection.execute(query, arguments).fetchone()
+            if candidate:
+                metadata = candidate.pop("preview_metadata", None)
+                if isinstance(metadata, (str, bytes)):
+                    try:
+                        metadata = json.loads(metadata)
+                    except ValueError:
+                        metadata = None
+                if preview_matches(metadata, source, original["sha256"], candidate["sha256"]):
+                    return candidate, "audio/mp4"
+        return original, "audio/flac" if source.endswith(".flac") else "audio/wav"
+
+    def backfill_playback_previews(self, identifier: str, owner_id=None):
+        """Publish only optional playback derivatives, without changing score revisions."""
+        self._identifier(identifier)
+        with self.connect() as connection:
+            row = self._owned(connection, identifier, owner_id)
+            if row["status"] != "completed" or row["result"] is None:
+                raise ValueError("Only completed jobs can receive playback previews")
+            previous = {
+                item["path"]: item
+                for item in connection.execute(
+                    "SELECT * FROM beatit.artifacts WHERE job_id=%s", (identifier,)
+                ).fetchall()
+            }
+        originals = {
+            name: previous[name]["sha256"] for name in PLAYBACK_PREVIEWS if name in previous
+        }
+        with tempfile.TemporaryDirectory(dir=self.root, prefix="playback-preview-") as scratch:
+            directory = Path(scratch)
+            for name in set(originals) | PREVIEW_FILES:
+                if name in previous:
+                    shutil.copyfile(self._cached_object(previous[name]), directory / name)
+            if PREVIEW_METADATA in row["payloads"]:
+                save_json(directory / PREVIEW_METADATA, row["payloads"][PREVIEW_METADATA])
+            report = prepare_playback_previews(directory)
+            if not report["created"] and not report["reused"]:
+                return {**report, "published": []}
+            metadata = self._read(directory / PREVIEW_METADATA, {})
+            manifests = []
+            for name in [*PLAYBACK_PREVIEWS.values(), PREVIEW_METADATA]:
+                path = directory / name
+                if not path.is_file():
+                    continue
+                if name != PREVIEW_METADATA:
+                    source = next(key for key, value in PLAYBACK_PREVIEWS.items() if value == name)
+                    if not preview_matches(
+                        metadata, source, originals.get(source), file_digest(path)
+                    ):
+                        continue
+                digest = file_digest(path)
+                old = previous.get(name)
+                key = (
+                    old["object_key"]
+                    if old and old["sha256"] == digest
+                    else f"jobs/{identifier}/{uuid4().hex}/{digest}/{name}"
+                )
+                if not old or old["sha256"] != digest:
+                    self.objects.put(key, path)
+                manifests.append(
+                    {"path": name, "object_key": key, "size": path.stat().st_size, "sha256": digest}
+                )
+            with self.connect() as connection:
+                current = self._owned(connection, identifier, owner_id, lock=True)
+                if current["status"] != "completed" or current["result"] != row["result"]:
+                    raise ValueError("Job changed while preparing playback previews; retry later")
+                current_originals = {
+                    item["path"]: item["sha256"]
+                    for item in connection.execute(
+                        "SELECT path,sha256 FROM beatit.artifacts WHERE job_id=%s AND path IN ('audio.wav','drums.wav') FOR UPDATE",
+                        (identifier,),
+                    ).fetchall()
+                }
+                if current_originals != originals:
+                    raise ValueError("Audio changed while preparing playback previews; retry later")
+                self._write_manifests(connection, identifier, manifests)
+                payloads = {**current["payloads"], PREVIEW_METADATA: metadata}
+                connection.execute(
+                    "UPDATE beatit.jobs SET payloads=%s WHERE id=%s",
+                    (json.dumps(payloads), identifier),
+                )
+            return {**report, "published": [item["path"] for item in manifests]}
 
     def file_path(self, identifier: str, relative: str, owner_id=None):
         return self._cached_object(self.artifact_manifest(identifier, relative, owner_id))
@@ -620,6 +734,14 @@ class JobStore:
 
     def finish_claim(self, identifier, token, directory, success=True, error=None):
         """Upload immutable objects first, then publish manifests/result under the lease fence."""
+        if success:
+            try:
+                prepare_playback_previews(directory)
+            except Exception as preview_error:
+                logging.warning(
+                    "Playback preview preparation failed (%s); using original audio",
+                    type(preview_error).__name__,
+                )
         manifests, payloads = self._capture(identifier, directory)
         result = self._read(directory / "result.json", None)
         progress = self._read(directory / "progress.json", QUEUED)
