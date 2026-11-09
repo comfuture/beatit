@@ -90,6 +90,10 @@ async function loadWaveform() {
       `/api/jobs/${props.job.id}/waveform?source=${encodeURIComponent(source.value)}`,
       { signal },
     );
+    if (response.status === 401) {
+      window.dispatchEvent(new Event("beatit-session-expired"));
+      return;
+    }
     if (!response.ok)
       throw new Error(
         "파형을 불러올 수 없습니다. 오디오 재생은 계속 사용할 수 있습니다.",
@@ -189,6 +193,10 @@ watch(playbackError, measureMinimumHeight, { flush: "post" });
 onBeforeUnmount(() => {
   cancelSelection();
   request?.abort();
+  player.value?.pause();
+  player.value?.removeAttribute("src");
+  player.value?.load();
+  peaks.value = [];
   layoutObserver?.disconnect();
   window.removeEventListener("keydown", shortcut);
 });

@@ -49,7 +49,9 @@ watch(
       });
       if (!controller.signal.aborted && layout.generation === generation)
         measures.value = layout.measures;
-    } catch {
+    } catch (reason) {
+      if (!controller.signal.aborted && (reason as { status?: number }).status === 401)
+        window.dispatchEvent(new Event("beatit-session-expired"));
       // The score stays readable when its engraver's layout cannot be mapped.
     } finally {
       if (!controller.signal.aborted) loadingLayout.value = false;

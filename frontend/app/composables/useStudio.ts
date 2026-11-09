@@ -10,7 +10,8 @@ import { validateOptions } from "~/utils/rhythm";
 import { mergeBeatReview, reviewAfterEdit } from "~/utils/beatReview";
 import { connectionUnavailable, runtimeStatus } from "~/utils/execution";
 
-export function useStudio() {
+export function useStudio(userId: string, onUnauthorized: () => void) {
+  const storageKey = `beatit-session:${userId}`;
   const jobs = ref<Job[]>([]);
   const current = ref<Job | null>(null);
   const system = ref<SystemInfo | null>(null);
@@ -81,23 +82,48 @@ export function useStudio() {
   let disposed = false;
   let selection = 0;
   let systemRefreshedAt = 0;
+  const pendingRequests = new Set<AbortController>();
+  let uploadRequest: XMLHttpRequest | undefined;
+  const assertActive = () => {
+    if (disposed) throw new DOMException("Workspace closed", "AbortError");
+  };
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(path, init);
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      const detail = body?.detail;
-      throw new Error(
-        typeof detail === "string"
-          ? detail
-          : detail
-            ? JSON.stringify(detail)
-            : `서버 오류 (${response.status})`,
-      );
+    assertActive();
+    const controller = new AbortController();
+    pendingRequests.add(controller);
+    const signal = init?.signal
+      ? AbortSignal.any([controller.signal, init.signal])
+      : controller.signal;
+    try {
+      const response = await fetch(path, {
+        ...init, credentials: "same-origin", cache: "no-store", signal,
+      });
+      assertActive();
+      if (response.status === 401) {
+        onUnauthorized();
+        throw new DOMException("Session expired", "AbortError");
+      }
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        const detail = body?.detail;
+        throw new Error(
+          typeof detail === "string"
+            ? detail
+            : detail
+              ? JSON.stringify(detail)
+              : `서버 오류 (${response.status})`,
+        );
+      }
+      const result = response.status === 204 ? (undefined as T) : await response.json();
+      assertActive();
+      return result;
+    } finally {
+      pendingRequests.delete(controller);
     }
-    return response.status === 204 ? (undefined as T) : response.json();
   }
   function report(reason: unknown) {
+    if (disposed || (reason instanceof DOMException && reason.name === "AbortError")) return;
     error.value = reason instanceof Error ? reason.message : String(reason);
   }
   function fileUrl(name: string, download = false) {
@@ -184,7 +210,7 @@ export function useStudio() {
     loadingEvents.value = true;
     try {
       await showJob(await api<Job>(`/api/jobs/${id}`), token);
-      if (token === selection) localStorage.setItem("beatit-session", id);
+      if (token === selection) localStorage.setItem(storageKey, id);
     } catch (e) {
       if (token === selection) report(e);
     } finally {
@@ -205,7 +231,7 @@ export function useStudio() {
     redoStack.value = [];
     selectedFile.value = null;
     loadingEvents.value = false;
-    localStorage.removeItem("beatit-session");
+    localStorage.removeItem(storageKey);
   }
   function chooseFile(file: File) {
     const extensions =
@@ -246,9 +272,11 @@ export function useStudio() {
       form.append("options", JSON.stringify({ ...options.value, tom_refinement: true }));
       const job = await new Promise<Job>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
+        uploadRequest = xhr;
+        xhr.onabort = () => reject(new DOMException("Workspace closed", "AbortError"));
         xhr.open("POST", "/api/jobs");
         xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable)
+          if (e.lengthComputable && !disposed)
             uploadProgress.value = Math.round((e.loaded / e.total) * 100);
         };
         xhr.onerror = () =>
@@ -256,6 +284,15 @@ export function useStudio() {
             new Error("파일 전송에 실패했습니다. 서버 연결을 확인하세요."),
           );
         xhr.onload = () => {
+          if (disposed) {
+            reject(new DOMException("Workspace closed", "AbortError"));
+            return;
+          }
+          if (xhr.status === 401) {
+            onUnauthorized();
+            reject(new DOMException("Session expired", "AbortError"));
+            return;
+          }
           try {
             const data = JSON.parse(xhr.responseText);
             if (xhr.status >= 200 && xhr.status < 300) resolve(data);
@@ -273,12 +310,15 @@ export function useStudio() {
         };
         xhr.send(form);
       });
+      assertActive();
       await selectJob(job.id);
+      assertActive();
       selectedFile.value = null;
       await refreshHistory();
     } catch (e) {
       report(e);
     } finally {
+      uploadRequest = undefined;
       uploading.value = false;
     }
   }
@@ -359,6 +399,7 @@ export function useStudio() {
       });
       await showJob(job, token);
       await refreshHistory();
+      assertActive();
       toast.add({
         title: "악보 정보 적용을 시작했습니다",
         description: "완료되면 악보 보기와 내보내기 파일이 갱신됩니다.",
@@ -402,6 +443,7 @@ export function useStudio() {
       });
       await showJob(job, token);
       await refreshHistory();
+      assertActive();
       toast.add({
         title: "악보 재생성을 시작했습니다",
         description: "편집 내용은 새 악보가 완성되면 저장됩니다.",
@@ -425,7 +467,7 @@ export function useStudio() {
       await refreshSystem();
       online.value = true;
       await refreshHistory();
-      const saved = localStorage.getItem("beatit-session");
+      const saved = localStorage.getItem(storageKey);
       if (saved && jobs.value.some((j) => j.id === saved))
         await selectJob(saved);
       if (system.value && !system.value.ffmpeg)
@@ -435,12 +477,26 @@ export function useStudio() {
       report(e);
     } finally {
       loading.value = false;
-      timer = setTimeout(poll, 1800);
+      if (!disposed) timer = setTimeout(poll, 1800);
     }
   });
   onBeforeUnmount(() => {
     disposed = true;
     selection++;
+    for (const request of pendingRequests) request.abort();
+    pendingRequests.clear();
+    localStorage.removeItem(storageKey);
+    uploadRequest?.abort();
+    jobs.value = [];
+    current.value = null;
+    selectedFile.value = null;
+    events.value = [];
+    originalEvents.value = [];
+    beatReview.value = { grid_key: "", beats: [] };
+    originalReview.value = { grid_key: "", beats: [] };
+    undoStack.value = [];
+    redoStack.value = [];
+    metadata.value = { title: "", author: "" };
     clearTimeout(timer);
     window.removeEventListener("beforeunload", beforeUnload);
   });
