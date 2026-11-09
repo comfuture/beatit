@@ -69,6 +69,7 @@ export interface ScoreMeasure {
 }
 export interface Job {
   id: string;
+  project_id?: string;
   filename: string;
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
   created: number;

@@ -22,7 +22,7 @@ export default defineNuxtConfig({
         { name: "theme-color", content: "#141518" },
         {
           name: "description",
-          content: "오디오에서 드럼 악보까지. 로컬 드럼 분석 및 편집 스튜디오.",
+          content: "오디오에서 드럼 악보까지. 드럼 분석 및 편집 스튜디오.",
         },
       ],
     },

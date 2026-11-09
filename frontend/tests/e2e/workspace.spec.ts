@@ -75,6 +75,8 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     const method = route.request().method();
+    if (path === "/api/auth/me")
+      return route.fulfill({ json: { user: { id: "workspace-test-user", email: "studio@example.com", name: "Studio User" } } });
     if (path === "/api/system") {
       systemRequests++;
       return route.fulfill({
