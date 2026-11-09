@@ -1,0 +1,103 @@
+{
+  "date": "2026-11-09",
+  "candidate_commit": "49a00eb052066bb292b14f05acbcf7ab0c3ab3f7",
+  "candidate_image_id": "sha256:81bc0396cf64793d705b7cdbd4efeab43bcf2985092e452d3e37f87edea6ef40",
+  "upload": {
+    "started_utc": "2026-11-09T13:35:29.602611+00:00",
+    "measurement": "Mac curl HTTP/2 direct HTTPS, existing browser session, no TLS verification bypass",
+    "source": {
+      "bytes": 320415531,
+      "sha256": "802fe378caec7d11bee7a8c016f993ac98743191c8fc4e29d3c78fd087aa582d"
+    },
+    "baseline_cloudflare_seconds_approx": 534,
+    "id": "10b0bb2b69624766b65f3221e8fa9118",
+    "put": {
+      "http_code": 200,
+      "http_version": "2",
+      "remote_ip": "144.24.83.69",
+      "size_upload": 320415531,
+      "speed_upload": 4780246,
+      "time_connect": 0.008136,
+      "time_appconnect": 0.432634,
+      "time_starttransfer": 67.025828,
+      "time_total": 67.029082,
+      "ssl_verify_result": 0
+    },
+    "transfer_mib_per_second": 4.558798261512377,
+    "transfer_mbps": 38.24197156690882,
+    "publication_seconds": 6.412789165973663,
+    "durable_utc": "2026-11-09T13:36:43.111642+00:00",
+    "job_status_at_publication": "running",
+    "session_check_to_ack_seconds": 67.09664995782077,
+    "session_check_to_durable_seconds": 73.5101601248607
+  },
+  "durable_input": {
+    "path": "input",
+    "size": 320415531,
+    "sha256": "802fe378caec7d11bee7a8c016f993ac98743191c8fc4e29d3c78fd087aa582d"
+  },
+  "media": {
+    "x-beatit-media": "origin",
+    "content-type": "audio/mp4",
+    "content-range": "bytes 0-1023/3025112",
+    "etag": "\"1b9ebdb01edeb2085de26cfe3e9d30752cfb4864f0d0ba14881c99e28c3300db\"",
+    "cache-control": "private, no-store",
+    "http_code": 206,
+    "remote_ip": "144.24.83.69",
+    "ssl_verify_result": 0
+  },
+  "tls": {
+    "issuer": "Let's Encrypt",
+    "expires": "2027-02-07",
+    "certbot_renewal_dry_run": "passed",
+    "timer": "snap.certbot.renew.timer",
+    "tls_verification_disabled": false
+  },
+  "routing": {
+    "hostname": "beatit.changkyun.kim",
+    "record": "A",
+    "proxy": "DNS only",
+    "address": "144.24.83.69",
+    "nginx_bind": "10.0.0.254:80/443",
+    "upstream": "127.0.0.1:18001",
+    "tailscale_443_preserved": true
+  },
+  "deployment_integrity": {
+    "before_after_equal": true,
+    "jobs": 9,
+    "revisions": 12,
+    "artifact_manifests": 248
+  },
+  "limitations": [
+    "One observed Mac direct HTTPS transfer, not a controlled network benchmark or a Chrome throughput measurement.",
+    "The earlier Cloudflare duration is approximate wall-clock time for the same file using 39 chunks.",
+    "Existing Chrome HTTP/3 connections can continue using cached Cloudflare routing until reconnected."
+  ],
+  "visible_workspace_sse": {
+    "seconds": 106.803,
+    "visible": "visible",
+    "requests": [],
+    "eventNames": [
+      "job",
+      "snapshot",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job",
+      "job"
+    ]
+  }
+}
