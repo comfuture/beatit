@@ -123,6 +123,7 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
         'filename="input.wav"',
       );
       expect(route.request().postDataBuffer()?.toString()).toContain('"tom_refinement":true');
+      job.updated++;
       job.status = "running";
       job.progress = {
         stage: serverManaged || modal ? "allocating" : colabExecution ? "preparing" : "separating",
@@ -226,10 +227,12 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       return;
     }
     if (path.endsWith("/cancel")) {
+      job.updated++;
       job.status = "cancelled";
       return route.fulfill({ json: job });
     }
     if (path.endsWith("/retry")) {
+      job.updated++;
       job.status = "running";
       return route.fulfill({ status: 202, json: job });
     }
@@ -269,15 +272,17 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       void pushed.emit("system", systemInfo());
     },
     progress: (stage: string, message: string, progress: number) => {
+      job.updated++;
       job.status = "running";
       job.progress = { stage, progress, message };
       (job as any).result = undefined;
       void pushed.emit("job", { job });
     },
     fail: () => {
+      job.updated++;
       job.status = "failed";
       (job as any).error = "모델 실행 실패";
-      void pushed.emit("job", { job });
+      return pushed.emit("job", { job });
     },
   };
 }
@@ -680,7 +685,9 @@ test("upload, progress, cancellation, failure and retry", async ({ page }) => {
     page.getByRole("heading", { name: "분석이 취소되었습니다" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "다시 시도" }).click();
-  state.fail();
+  // Failure follows the acknowledged retry, as it does in the job worker.
+  await expect(page.getByRole("heading", { name: "드럼 트랙을 분석하고 있습니다" })).toBeVisible();
+  await state.fail();
   await expect(
     page.getByRole("heading", { name: "분석을 완료하지 못했습니다" }),
   ).toBeVisible({ timeout: 10000 });
