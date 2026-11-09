@@ -1,6 +1,6 @@
 """Deploy once: uv run modal deploy scripts/modal_app.py.
 
-The dependency image is cached independently of source changes. Weights are prepared
+The dependency image is referenced by a published name, independently of source changes. Weights are prepared
 on CPU into a persistent Volume by default; BEATIT_MODAL_MODEL_STORAGE=image bakes
 them into a cached build layer instead. Neither path downloads models on a GPU.
 """
@@ -12,8 +12,8 @@ import modal
 
 from transcription.modal_config import (
     APP_NAME,
-    CACHE_ENV,
     GPU,
+    IMAGE_NAME,
     JOB_DIR,
     JOB_VOLUME,
     MODEL_DIR,
@@ -31,49 +31,9 @@ models = modal.Volume.from_name(MODEL_VOLUME, create_if_missing=True, version=2)
 jobs = modal.Volume.from_name(JOB_VOLUME, create_if_missing=True, version=2)
 progress = modal.Dict.from_name(PROGRESS_DICT, create_if_missing=True)
 
-image = (
-    modal.Image.debian_slim(python_version="3.12")
-    .apt_install("ffmpeg", "git", "build-essential", "pkg-config", "libopus-dev", "libgomp1")
-    .workdir("/opt/beatit")
-    .uv_sync(str(ROOT), extras=["cuda"], frozen=True, extra_options="--no-dev", uv_version="0.9.26")
-    # Modal's uv launcher runs before Volume mounts. Keep its cache out of /models,
-    # otherwise XDG_CACHE_HOME makes the mount point non-empty before it can mount.
-    .env({"UV_CACHE_DIR": "/tmp/uv-cache"})
-    .env(
-        {
-            **CACHE_ENV,
-            "BEATIT_MODAL_APP": APP_NAME,
-            "BEATIT_MODAL_GPU": GPU,
-            "BEATIT_MODAL_MODEL_STORAGE": MODEL_STORAGE,
-            "PYTHONUNBUFFERED": "1",
-            "OMP_NUM_THREADS": "2",
-            "OPENBLAS_NUM_THREADS": "2",
-            "MKL_NUM_THREADS": "2",
-            "NUMBA_NUM_THREADS": "2",
-        }
-    )
-)
-if MODEL_STORAGE == "image":
-    # Only model-preparation code precedes this layer; UI/pipeline edits reuse weights.
-    for name in (
-        "__init__.py",
-        "modal_config.py",
-        "modal_models.py",
-        "detection.py",
-        "drumsep.py",
-        "rhythm.py",
-    ):
-        image = image.add_local_file(
-            ROOT / "src/transcription" / name,
-            "/opt/model-source/transcription/" + name,
-            copy=True,
-        )
-    image = image.env({"PYTHONPATH": "/opt/model-source"}).run_commands(
-        "python -m transcription.modal_models"
-    )
-
-# Source is mounted after the expensive dependency/model layers, without rebuilding them.
-image = image.env({"PYTHONPATH": "/opt/beatit/src"}).add_local_dir(
+# The dependency/runtime image is built and published explicitly by build_modal_image.py.
+# Deploying this app only looks up the pinned name and mounts current source.
+image = modal.Image.from_name(IMAGE_NAME).add_local_dir(
     ROOT / "src/transcription",
     "/opt/beatit/src/transcription",
     ignore=["static", "__pycache__"],

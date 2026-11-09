@@ -92,7 +92,8 @@ Jobs and media are saved in the ignored `data/` directory. Run
 to fetch the Demucs, DrumSep, and Beat This! weights before processing. Use the selected
 extra on Linux.
 
-For Modal, deploy `scripts/modal_app.py` and configure credentials as described in
+For Modal, build/publish the named runtime with `scripts/build_modal_image.py`,
+deploy `scripts/modal_app.py`, and configure credentials as described in
 the [deployment guide](docs/modal-deployment.md), then launch `uv run drum-score serve --engine modal`.
 `DRUM_EXECUTION_BACKEND=modal|local|colab` or `serve --engine ...` selects the engine
 when starting the service. Docker uses `BEATIT_EXECUTION_BACKEND`, falling back to

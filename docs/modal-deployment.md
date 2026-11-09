@@ -30,6 +30,7 @@ For development, authenticate the CLI once and keep its profile on the operator'
 ```sh
 uv sync --frozen
 uv run modal setup
+uv run python scripts/build_modal_image.py   # explicitly build and publish the named runtime
 uv run modal deploy --env main scripts/modal_app.py
 uv run modal run --env main scripts/modal_app.py  # prepare models on CPU, without a GPU
 uv run drum-score serve --engine modal
@@ -55,6 +56,7 @@ API, copied into a task request, or injected into the GPU image.
 | `MODAL_TOKEN_ID_FILE` | unset | Native service: file containing token ID |
 | `MODAL_TOKEN_SECRET_FILE` | unset | Native service: file containing token secret |
 | `BEATIT_MODAL_APP` | `beatit` | Deployed app and resource name prefix |
+| `BEATIT_MODAL_IMAGE` | `beatit-processing:py312-cu128-volume-8e06b89eeb19-v1` | Published runtime image name and version tag |
 | `MODAL_ENVIRONMENT` | `main` | Deployment/client environment |
 | `BEATIT_MODAL_GPU` | `T4` | GPU selection at deployment; match on the client for status |
 | `BEATIT_MODAL_MODEL_STORAGE` | `volume` | Deployment-time `volume` or `image` |
@@ -94,6 +96,30 @@ ADTOF and Beat This! dependencies during the cached build. Application source is
 added **after** that dependency layer, so ordinary source edits do not reinstall
 the ML environment. Tasks do not run pip or uv.
 
+The recipe lives in `scripts/build_modal_image.py`. It calls `Image.build()` and
+`Image.publish()` explicitly. `scripts/modal_app.py` uses only
+`modal.Image.from_name(...)` and mounts application source afterward. App deployment
+does not execute the dependency/model build recipe. The uv launcher's cache has its
+own `/tmp/uv-cache` path: allowing it to follow the model `XDG_CACHE_HOME` creates
+files under `/models` before Volume mounting and causes the runner to reject the mount.
+
+[Named Images](https://modal.com/docs/guide/named-images) provide explicit image
+change management in addition to layer caching. Publishing a new tag does not update
+deployed Functions until the app is redeployed. This project treats a version tag as
+immutable: publishing the same image again is idempotent, and the publisher refuses
+to replace a tag that already points to a different image. For a dependency update,
+choose a new `BEATIT_MODAL_IMAGE` tag when building and deploying:
+
+```sh
+BEATIT_MODAL_IMAGE=beatit-processing:my-runtime-v2 uv run python scripts/build_modal_image.py
+BEATIT_MODAL_IMAGE=beatit-processing:my-runtime-v2 uv run modal deploy --env main scripts/modal_app.py
+```
+
+Use matching app, GPU and model-storage configuration when publishing and deploying;
+these non-secret settings are part of the runtime recipe. The deployed default tag
+was published from the already verified image ID, so adding the name did not change
+the runtime used by the first/repeat benchmark.
+
 The default model store is the persistent v2 `beatit-models` Volume. Demucs,
 DrumSep and Beat This! are downloaded by a CPU-only preparation function, into a
 directory keyed by the model fingerprint. ADTOF weights already ship in its pinned
@@ -114,6 +140,7 @@ claim.
 An image-baked alternative is implemented:
 
 ```sh
+BEATIT_MODAL_MODEL_STORAGE=image uv run python scripts/build_modal_image.py
 BEATIT_MODAL_MODEL_STORAGE=image uv run modal deploy --env main scripts/modal_app.py
 ```
 
