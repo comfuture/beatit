@@ -43,6 +43,16 @@ const runtimeConnected = computed(() => {
     ["ready", "running", "idle"].includes(runtime.state);
 });
 const sidebarOpen = ref(true);
+// USidebar keeps a private mobile model. Its menu must have a separate,
+// controlled value so a remembered desktop state cannot open an overlay.
+const mobileSidebarOpen = ref(false);
+const sidebarMenu = computed(() => ({
+  open: mobileSidebarOpen.value,
+  "onUpdate:open": (value: boolean) => {
+    mobileSidebarOpen.value = value;
+    sidebarOpen.value = value;
+  },
+}));
 const inspectorOpen = ref(false);
 const sessionBrowserOpen = ref(false);
 const selectedJobId = ref<string | null>(null);
@@ -166,13 +176,13 @@ function openJob(id: string) {
   navigate(() => {
     studio.selectJob(id);
     position.value = 0;
-    if (sidebarOverlay.value) sidebarOpen.value = false;
+    if (sidebarOverlay.value) closeMobileNavigation();
   });
 }
 function browseSessions() {
   search.value = "";
   selectedJobId.value = current.value?.id || null;
-  if (sidebarOverlay.value) sidebarOpen.value = false;
+  if (sidebarOverlay.value) closeMobileNavigation();
   sessionBrowserOpen.value = true;
 }
 function loadSession() {
@@ -184,7 +194,7 @@ function newSession() {
   navigate(() => {
     studio.newSession();
     position.value = 0;
-    if (sidebarOverlay.value) sidebarOpen.value = false;
+    if (sidebarOverlay.value) closeMobileNavigation();
   });
 }
 function discard() {
@@ -217,17 +227,27 @@ function shortcuts(event: KeyboardEvent) {
     event.shiftKey ? studio.redo() : studio.undo();
   }
 }
+function closeMobileNavigation() {
+  mobileSidebarOpen.value = false;
+  sidebarOpen.value = false;
+}
+function toggleNavigation() {
+  if (sidebarOverlay.value) {
+    mobileSidebarOpen.value = !mobileSidebarOpen.value;
+    sidebarOpen.value = mobileSidebarOpen.value;
+  } else sidebarOpen.value = !sidebarOpen.value;
+}
 function resize() {
+  const wasOverlay = sidebarOverlay.value;
   sidebarOverlay.value = window.innerWidth < 1024;
+  if (sidebarOverlay.value && !wasOverlay) closeMobileNavigation();
   const next: LayoutBand = window.innerWidth < 768
     ? "mobile" : window.innerWidth < 1280 ? "medium" : "desktop";
   if (next !== layoutBand.value) {
     layoutBand.value = next;
     inspectorOpen.value = false;
+    mobileSidebarOpen.value = false;
     sidebarOpen.value = next === "desktop";
-    // USidebar also changes its mobile model at 1024px. Apply our layout default
-    // after that transition, then retain manual toggles within the same band.
-    void nextTick(() => { sidebarOpen.value = next === "desktop"; });
   }
 }
 function historyNavigation() {
@@ -261,7 +281,9 @@ onBeforeUnmount(() => {
 
     <div class="studio-shell">
       <USidebar
+        :key="layoutBand"
         v-model:open="sidebarOpen"
+        :menu="sidebarMenu"
         title="워크스페이스"
         collapsible="icon"
         rail
@@ -377,7 +399,7 @@ onBeforeUnmount(() => {
               color="neutral"
               variant="ghost"
               aria-label="사이드바 토글"
-              @click="sidebarOpen = !sidebarOpen"
+              @click="toggleNavigation"
             /><span class="header-section">워크스페이스</span
             ><UIcon
               name="i-lucide-chevron-right"

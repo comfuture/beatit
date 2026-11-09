@@ -47,7 +47,7 @@ export async function serveMedia(request, env, fetchOrigin = fetch) {
     const manifest = await response.json();
     if (!manifest.object_key || !Number.isSafeInteger(manifest.size) || manifest.size <= 0 ||
         !/^[0-9a-f]{64}$/.test(manifest.sha256) ||
-        !['audio/wav', 'audio/flac'].includes(manifest.content_type))
+        !['audio/wav', 'audio/flac', 'audio/mp4'].includes(manifest.content_type))
       return failure(503, "Invalid media manifest");
     const etag = `"${manifest.sha256}"`;
     const ifRange = request.headers.get("If-Range");
