@@ -213,12 +213,13 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       if (rejectScore) return route.fulfill({ status: rejectScore,
         json: { detail: "악보가 변경되었습니다. 새 악보를 불러온 뒤 다시 적용하세요." } });
       if (saved.events) jobEvents = saved.events;
-      job.result.options = saved.options;
+      // Stand in for the backend's stored-analysis automatic timing resolution.
+      job.result.options = { ...saved.options, bpm: saved.options.bpm ?? 131.2, offset: saved.options.offset ?? -0.05 };
       job.result.metadata = saved.metadata;
       job.result.beat_review = saved.beat_review;
       job.result.metadata_source_generation = undefined;
       job.result.generation += "-revised";
-      job.result.grid = alignmentGrid(saved.options, job.result.duration, jobEvents);
+      job.result.grid = alignmentGrid(job.result.options, job.result.duration, jobEvents);
       (job as any).request = { options: saved.options, ...(saved.client_edit_id ? { client_edit_id: saved.client_edit_id } : {}) };
       job.updated++;
       return route.fulfill({ status: 202, json: job });
@@ -914,6 +915,124 @@ test("legacy resolved timing starts clean and unresolved tempo disables beat mov
     await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
   await expect(page.getByText("BPM과 첫 마디 기준을 확인한 뒤 이동하세요.", { exact: true })).toBeVisible();
 });
+
+for (const automatic of ["offset", "bpm-after-shift", "both", "bpm-only"] as const) {
+  test(`automatic ${automatic} regeneration submits valid timing and keeps other drafts`, async ({ page }) => {
+    const state = await setup(page);
+    await openSession(page);
+    const manualEvents = automatic === "offset" || automatic === "bpm-after-shift";
+    if (manualEvents) await page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true }).click();
+    await page.getByLabel("악보 제목").fill("Automatic timing draft");
+    if (automatic === "bpm-after-shift")
+      await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+    if (automatic === "offset" || automatic === "both") {
+      await page.getByRole("button", { name: "초 단위 위치", exact: true }).click();
+      await page.getByRole("spinbutton", { name: "첫 마디 시작", exact: true }).fill("");
+    }
+    if (automatic !== "offset") await page.getByRole("spinbutton", { name: "템포 BPM" }).fill("");
+    await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+    await expect.poll(() => state.scoreRequests().length).toBe(1);
+    const saved = state.getSaved();
+    expect(saved.options.bpm).toBe(automatic === "offset" ? 120 : null);
+    expect(saved.options.offset).toBe(automatic === "offset" || automatic === "both" ? null
+      : automatic === "bpm-after-shift" ? 0.25 : 0);
+    expect(saved.preserve_events).toBeUndefined();
+    expect(saved.options.tom_refinement).toBe(true);
+    expect(saved.metadata.title).toBe("Automatic timing draft");
+    if (manualEvents) expect(saved.events).toEqual([
+      initialEvents[0], { time: 0.125, pitch: 35, strength: 0.8, velocity: 100 }, initialEvents[1],
+    ]);
+    else expect(saved.events).toBeNull();
+    if (automatic !== "bpm-only") {
+      expect(saved.source_generation).toBe("render-1");
+      expect(saved.client_edit_id).toMatch(/^[0-9a-f-]{36}$/);
+    }
+    await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+    await expect(page.getByRole("spinbutton", { name: "템포 BPM" })).toHaveValue(automatic === "offset" ? "120" : "131.2");
+    await expect(page.getByLabel("악보 제목")).toHaveValue("Automatic timing draft");
+    await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toHaveCount(0);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+test("an automatic timing publication before its acknowledgement keeps alignment correlation", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  await page.getByRole("spinbutton", { name: "템포 BPM" }).fill("");
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  let submitted: any;
+  await page.route(`**/api/jobs/${id}/score`, async (route) => {
+    submitted = route.request().postDataJSON();
+    const own = state.currentJob();
+    own.updated++;
+    own.result.generation = "render-auto-early";
+    own.result.options = { ...submitted.options, bpm: 131.2 };
+    own.result.grid = alignmentGrid(own.result.options, own.result.duration, initialEvents);
+    own.result.metadata = submitted.metadata;
+    (own as any).request = { options: submitted.options, client_edit_id: submitted.client_edit_id };
+    await state.publishJob(own, submitted.events ?? initialEvents);
+    await held;
+    await route.fulfill({ status: 202, json: own });
+  });
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.getByRole("spinbutton", { name: "템포 BPM" })).toHaveValue("131.2");
+  expect(submitted.preserve_events).toBeUndefined();
+  expect(submitted).toMatchObject({ source_generation: "render-1", options: { bpm: null, offset: 0.25 } });
+  expect(submitted.client_edit_id).toMatch(/^[0-9a-f-]{36}$/);
+  await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toHaveCount(0);
+  release();
+  await expect(page.getByRole("button", { name: "+0.5박 늦춤", exact: true })).toBeEnabled();
+  expect(state.errors).toEqual([]);
+});
+
+for (const rejected of [false, true]) {
+  test(`an automatic retry after an uncertain alignment keeps its pending context (rejected: ${rejected})`, async ({ page }) => {
+    const state = await setup(page);
+    await openSession(page);
+    await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+    const attempts: any[] = [];
+    await page.route(`**/api/jobs/${id}/score`, (route) => {
+      attempts.push(route.request().postDataJSON());
+      if (attempts.length === 1)
+        return route.fulfill({ status: 503, json: { detail: "Acknowledgement unavailable" } });
+      return rejected
+        ? route.fulfill({ status: 409, json: { detail: "Previous revision is still pending" } })
+        : route.fallback();
+    });
+    await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+    await expect(page.getByText("서버에 연결할 수 없습니다. 다시 시도하세요.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "실행 취소", exact: true }).click();
+    await page.getByRole("spinbutton", { name: "템포 BPM" }).fill("");
+    await page.getByLabel("악보 제목").fill("New automatic draft");
+    await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+    await expect.poll(() => attempts.length).toBe(2);
+    expect(attempts[1]).toMatchObject({ source_generation: "render-1", options: { bpm: null, offset: 0 } });
+    expect(attempts[1].client_edit_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(attempts[1].client_edit_id).not.toBe(attempts[0].client_edit_id);
+    expect(attempts[1].preserve_events).toBeUndefined();
+    if (rejected) {
+      await expect(page.getByText("Previous revision is still pending", { exact: true })).toBeVisible();
+      const earlier = state.currentJob();
+      earlier.updated++;
+      earlier.result.generation = "render-earlier-uncertain";
+      earlier.result.options = attempts[0].options;
+      earlier.result.grid = alignmentGrid(earlier.result.options, earlier.result.duration, initialEvents);
+      earlier.result.metadata = attempts[0].metadata;
+      (earlier as any).request = { options: attempts[0].options, client_edit_id: attempts[0].client_edit_id };
+      await state.publishJob(earlier, attempts[0].events);
+      await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toBeVisible();
+      await expect(page.getByRole("spinbutton", { name: "템포 BPM" })).toHaveValue("");
+      await expect(page.getByLabel("악보 제목")).toHaveValue("New automatic draft");
+    } else {
+      await expect(page.getByRole("spinbutton", { name: "템포 BPM" })).toHaveValue("131.2");
+      await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toHaveCount(0);
+      await expect(page.getByLabel("악보 제목")).toHaveValue("New automatic draft");
+    }
+    expect(state.errors).toEqual([]);
+  });
+}
 
 test("beat movement explains a boundary without requiring seconds in the normal control", async ({ page }) => {
   await setup(page);

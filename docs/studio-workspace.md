@@ -81,6 +81,12 @@ number of leading measures. Bounds are rejected rather than silently clamped.
 Source event timestamps and source audio remain unchanged; triplet quantization
 still uses the selected triplet grid at the new phase.
 
+Clearing BPM or the advanced seconds input requests the existing automatic
+timing analysis. Those nullable options use ordinary regeneration instead of
+explicit alignment preservation. A pending alignment draft still carries its
+generation fence and request identity so its own automatic result can be applied
+without overwriting newer local edits.
+
 The existing owner-scoped `POST /api/jobs/{id}/score` accepts a backward-compatible
 `preserve_events` flag and optional `source_generation` fence. An opaque
 `client_edit_id` in the job request identifies a client's own publication even

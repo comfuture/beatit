@@ -13,7 +13,7 @@ import { sessionIdFromPath, sessionPath } from "~/utils/sessionLocation";
 import { actionErrorMessage, isTransientReadError } from "~/utils/connection";
 import { discardUpload, uploadMedia } from "~/utils/upload";
 import { workspaceEvents } from "~/utils/workspaceEvents";
-import { alignmentGrid, canonicalAlignment, resolvedRevision, shiftFirstBar } from "~/utils/alignment";
+import { alignmentGrid, canonicalAlignment, resolvedRevision, scoreRevisionTiming, shiftFirstBar } from "~/utils/alignment";
 
 export function useStudio(userId: string, onUnauthorized: () => void) {
   const storageKey = `beatit-session:${userId}`;
@@ -603,17 +603,18 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     mutating.value = true;
     error.value = "";
     let editId: string | null = null;
+    const previousClientEdit = pendingClientEdit;
     try {
-      const preserve = alignmentDirty.value;
-      const savedOptions = preserve
-        ? { ...revision.value, offset: canonicalAlignment(revision.value, firstHit.value).offset }
-        : { ...revision.value, tom_refinement: true };
+      const alignmentChanged = alignmentDirty.value;
+      const alignmentContext = alignmentChanged || !!previousClientEdit;
+      const { preserveEvents: preserve, options: savedOptions } =
+        scoreRevisionTiming(revision.value, alignmentChanged, firstHit.value);
       let review = beatReview.value;
       if (preserve) {
         try { review = mergeBeatReview(events.value, alignmentGrid(savedOptions, result.value!.duration, events.value)); }
         catch { review = { grid_key: "", beats: [] }; }
       }
-      if (preserve) {
+      if (alignmentContext) {
         editId = crypto.randomUUID();
         pendingClientEdit = { id: editId, draftKey: draftKey() };
       }
@@ -625,7 +626,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
           events: preserve || eventsDirty.value ? events.value : null,
           metadata: metadata.value,
           beat_review: review,
-          ...(preserve ? { preserve_events: true, source_generation: result.value!.generation, client_edit_id: editId } : {}),
+          ...(preserve ? { preserve_events: true } : {}),
+          ...(alignmentContext ? { source_generation: result.value!.generation, client_edit_id: editId } : {}),
         }),
       });
       await showJob(job, token);
@@ -638,7 +640,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       });
     } catch (e) {
       if (editId && pendingClientEdit?.id === editId && (e as { status?: number }).status &&
-          (e as { status: number }).status < 500) pendingClientEdit = null;
+          (e as { status: number }).status < 500) pendingClientEdit = previousClientEdit;
       report(e);
     } finally {
       mutating.value = false;
