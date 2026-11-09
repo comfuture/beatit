@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
+from starlette.requests import ClientDisconnect
 
 from .pipeline import save_json
 
@@ -134,6 +135,59 @@ class ChunkUploads:
                     raise HTTPException(400, "업로드 조각이 완전히 전송되지 않았습니다.")
                 await run_in_threadpool(self.append, directory, metadata, offset, chunk)
             return metadata
+
+    async def receive_direct(self, owner, identifier, request):
+        """Receive one complete request without an additional whole-file spool.
+
+        A failed receive never advances the acknowledged offset. Existing complete
+        bytes are only compared on retries, making a lost response harmless.
+        """
+        directory = self.directory(owner, identifier)
+        with self.locked(directory):
+            metadata = self.status(owner, identifier)
+            if metadata["state"] != "uploading":
+                raise HTTPException(409, "파일 전송이 이미 끝났습니다.")
+            if metadata["offset"] not in {0, metadata["size"]}:
+                raise HTTPException(409, "전송한 조각이 있습니다. 기존 위치에서 이어서 전송하세요.")
+            expected = metadata["size"]
+            length = request.headers.get("content-length")
+            if length is not None and length != str(expected):
+                raise HTTPException(413, "업로드한 파일의 크기가 올바르지 않습니다.")
+            duplicate = metadata["offset"] == expected
+            with (directory / "input").open("r+b") as destination:
+                if not duplicate:
+                    destination.truncate(0)
+                received = 0
+                try:
+                    async for data in request.stream():
+                        received += len(data)
+                        if received > expected:
+                            raise HTTPException(413, "파일 크기 제한을 초과했습니다.")
+                        if duplicate:
+                            existing = await run_in_threadpool(destination.read, len(data))
+                            if existing != data:
+                                raise HTTPException(409, "이미 전송한 파일과 내용이 다릅니다.")
+                        else:
+                            await run_in_threadpool(destination.write, data)
+                    if received != expected:
+                        raise HTTPException(400, "파일이 완전히 전송되지 않았습니다.")
+                    if not duplicate:
+                        await run_in_threadpool(self.flush, destination)
+                except BaseException as error:
+                    if not duplicate:
+                        destination.truncate(0)
+                    if isinstance(error, ClientDisconnect):
+                        raise HTTPException(400, "파일 전송이 중단되었습니다.") from None
+                    raise
+            metadata["offset"] = expected
+            metadata["expires"] = time.time() + UPLOAD_TTL
+            save_json(directory / "upload.json", metadata)
+            return metadata
+
+    @staticmethod
+    def flush(destination):
+        destination.flush()
+        os.fsync(destination.fileno())
 
     @staticmethod
     def append(directory, metadata, offset, chunk):

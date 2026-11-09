@@ -439,6 +439,11 @@ class JobStore:
                     return candidate, "audio/mp4"
         return original, "audio/flac" if source.endswith(".flac") else "audio/wav"
 
+    def playback_file(self, identifier: str, source: str, owner_id=None):
+        """Resolve bytes and validators from the same authorized immutable manifest."""
+        manifest, content_type = self.playback_manifest(identifier, source, owner_id)
+        return self._cached_object(manifest), manifest, content_type
+
     def backfill_playback_previews(self, identifier: str, owner_id=None):
         """Publish only optional playback derivatives, without changing score revisions."""
         self._identifier(identifier)
