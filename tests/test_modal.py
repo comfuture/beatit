@@ -320,6 +320,50 @@ def test_failed_cancel_remains_recoverable_after_job_deletion(rpc, monkeypatch):
     assert not record.exists()
 
 
+@pytest.mark.parametrize("failure", ["credentials", "network"])
+def test_legacy_record_is_migrated_before_failed_startup_cancellation(
+    tmp_path, monkeypatch, failure
+):
+    from transcription.store import JobStore
+
+    directory = tmp_path / ("c" * 32)
+    directory.mkdir()
+    (directory / modal_worker.CALL_FILE).write_text('{"call_id":"fc-legacy"}')
+    store = JobStore(tmp_path)
+    store.add(directory.name, "legacy.wav")
+    store.update(directory.name, "cancelled")
+
+    def fail(*args, **kwargs):
+        raise ConnectionError("Unavailable")
+
+    monkeypatch.setattr(
+        modal_worker, "load_credentials", fail if failure == "credentials" else lambda: None
+    )
+    monkeypatch.setattr(
+        modal_worker.modal.FunctionCall,
+        "from_id",
+        lambda _: SimpleNamespace(cancel=fail),
+    )
+    store.start()
+    store.stop()
+    record = modal_worker.call_record(directory)
+    assert record.is_file()
+    store.delete(directory.name)
+    assert not directory.exists() and record.is_file()
+    recovered = []
+    monkeypatch.setattr(modal_worker, "load_credentials", lambda: None)
+    monkeypatch.setattr(
+        modal_worker.modal.FunctionCall,
+        "from_id",
+        lambda call_id: SimpleNamespace(cancel=lambda **kwargs: recovered.append(call_id)),
+    )
+    restarted = JobStore(tmp_path)
+    restarted.start()
+    restarted.stop()
+    assert recovered == ["fc-legacy"]
+    assert not record.exists()
+
+
 def test_result_download_has_a_compressed_size_limit(tmp_path, monkeypatch):
     monkeypatch.setattr(modal_worker, "MAX_RESULT_BYTES", 3)
     with pytest.raises(ValueError, match="size limit"):

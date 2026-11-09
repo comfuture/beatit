@@ -106,7 +106,12 @@ def cancel_record(directory: Path):
     """Also used after server restart or a forced worker termination."""
     record = call_record(directory)
     if not record.is_file():
-        record = directory / CALL_FILE
+        legacy = directory / CALL_FILE
+        if legacy.is_file():
+            # Migrate before credentials or RPC can fail. The user may delete the
+            # legacy job after startup logs an unsuccessful cancellation.
+            record.parent.mkdir(mode=0o700, exist_ok=True)
+            save_json(record, json.loads(legacy.read_text()))
     if not record.is_file():
         return
     load_credentials()
