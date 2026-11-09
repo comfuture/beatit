@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { mockWorkspaceEvents } from "./workspaceEvents";
 
 function jobFor(owner: string) {
   const options = {
@@ -39,6 +40,13 @@ async function accountApi(page: Page, initial: string | null) {
   let historyRequests = 0;
   let hideHistory = false;
   let hold: ((route: Route) => Promise<void>) | null = null;
+  const system = {
+    devices: ["cpu"], default_device: "cpu", ffmpeg: true, verovio: true,
+    musescore: false, max_upload_bytes: 1073741824, max_duration_seconds: 1800,
+  };
+  const pushed = await mockWorkspaceEvents(page, () => owner
+    ? { jobs: hideHistory ? [] : [jobFor(owner)], system }
+    : null);
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/auth/me") return route.fulfill({ json: { user: owner ? { id: owner, email: `${owner}@example.com`, name: `Account ${owner}` } : null } });
@@ -63,11 +71,12 @@ async function accountApi(page: Page, initial: string | null) {
   });
   return {
     switchTo: (next: string | null) => { owner = next; },
-    expire: () => { owner = null; denyJobs = true; },
+    expire: () => { owner = null; denyJobs = true; void pushed.emit("session-expired", {}); },
     denyHistory: () => { denyJobs = true; },
     historyRequests: () => historyRequests,
     hideHistory: () => { hideHistory = true; },
     holdDetail: (callback: (route: Route) => Promise<void>) => { hold = callback; },
+    pushed,
   };
 }
 async function chooseSession(page: Page, owner: string) {
@@ -419,27 +428,19 @@ for (const endpoint of ["system", "history", "detail"]) {
   });
 }
 
-test("an aborted background read remains quiet, preserves edits and retries without a reload", async ({ page }) => {
-  await accountApi(page, "A");
+test("a stream interruption preserves edits and recovers without recurring history requests", async ({ page }) => {
+  const api = await accountApi(page, "A");
   await page.goto(`/sessions/${"a".repeat(32)}`);
   const cell = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
   await cell.click();
-  let unavailable = true;
-  let failedReads = 0;
-  await page.route("**/api/jobs", (route) => {
-    if (unavailable) {
-      failedReads++;
-      return route.abort("failed");
-    }
-    return route.fallback();
-  });
-  await expect.poll(() => failedReads).toBeGreaterThan(0);
+  const historyReads = api.historyRequests();
+  await api.pushed.fail();
   await expect(page.locator(".status-bar .engine-indicator")).not.toHaveClass(/online/);
   await expect(cell).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText(/signal ended|Failed to fetch|서버 오류/)).toHaveCount(0);
-  unavailable = false;
   await expect(page.locator(".status-bar .engine-indicator")).toHaveClass(/online/);
   await expect(cell).toHaveAttribute("aria-pressed", "true");
+  expect(api.historyRequests()).toBe(historyReads);
 });
 
 test("an authoritative auth401 immediately removes an already verified workspace", async ({ page }) => {
