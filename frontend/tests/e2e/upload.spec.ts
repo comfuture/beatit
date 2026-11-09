@@ -45,7 +45,7 @@ test(`a large video uses ${mode} transport, recovers an acknowledgement and show
     if (path === `/api/uploads/${id}` && method === "GET") return route.fulfill({ json: session() });
     if (path === `/api/uploads/${id}` && method === "PUT") {
       const data = route.request().postDataBuffer()!;
-      expect(data).toEqual(source);
+      expect(data.equals(source)).toBe(true);
       received.push(data);
       offset = data.length;
       return route.fulfill({ status: 503, body: "upstream disconnected after upload" });
@@ -65,10 +65,17 @@ test(`a large video uses ${mode} transport, recovers an acknowledgement and show
   });
   await page.goto("/");
   await page.getByLabel("소스 파일 선택").setInputFiles({ name: job.filename, mimeType: "video/mp4", buffer: source });
+  // Publication assertions start after the raw body and lost-ack reconciliation,
+  // whose transport through Playwright can take longer than a DOM assertion.
+  const finalizing = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname === `/api/uploads/${id}/complete` && response.status() === 202,
+  );
   await page.getByRole("button", { name: "분석 시작" }).click();
+  await finalizing;
   await expect(page.getByText("파일 저장 중", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "업로드 취소", exact: true })).toHaveCount(0);
-  expect(Buffer.concat(received)).toEqual(source);
+  expect(Buffer.concat(received).equals(source)).toBe(true);
   expect(received).toHaveLength(mode === "direct" ? 1 : 2);
   expect(completes).toBe(1);
   published = true;
