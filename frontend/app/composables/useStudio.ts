@@ -101,6 +101,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   let resyncNeeded = false;
   let initialized = false;
   let retrySelection = false;
+  const streamJob = () => current.value || retrySelection ? activeId.value : undefined;
   const pendingRequests = new Set<AbortController>();
   let uploadRequest: AbortController | undefined;
   let uploadSession: { file: File; options: string; id?: string } | undefined;
@@ -228,7 +229,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     disconnected: () => { online.value = false; resyncNeeded = true; },
     checkSession: () => {
       window.dispatchEvent(new Event("beatit-session-check"));
-      if (activeId.value && current.value) void reconcileSelection().catch(() => {});
+      if (activeId.value && (current.value || retrySelection)) void reconcileSelection().catch(() => {});
     },
     event: async (type, value) => {
       if (disposed) return;
@@ -245,7 +246,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
         });
         system.value = value.system;
         const selected = jobs.value.find((job) => job.id === activeId.value);
-        if (current.value && (resyncNeeded || (selected && selected.updated !== current.value.updated)))
+        if (activeId.value && (retrySelection || (current.value &&
+            (resyncNeeded || (selected && selected.updated !== current.value.updated)))))
           await reconcileSelection();
         resyncNeeded = false;
         online.value = !retrySelection;
@@ -279,7 +281,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       if (retrySelection) throw new TypeError("Network unavailable");
       online.value = true;
       bootstrapAttempt = 0;
-      if (!document.hidden) stream.start(current.value ? activeId.value : undefined);
+      if (!document.hidden) stream.start(streamJob());
       if (system.value && !system.value.ffmpeg)
         error.value = "FFmpeg/ffprobe가 없습니다. README의 설치 안내를 확인하세요.";
     } catch (reason) {
@@ -292,7 +294,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   }
   function onVisibility() {
     if (document.hidden) stream.suspend();
-    else if (system.value && initialized) stream.resume(current.value ? activeId.value : undefined);
+    else if (system.value && initialized) stream.resume(streamJob());
     else void bootstrap();
   }
   async function selectJob(id: string, locationMode: LocationMode = "push") {
@@ -326,7 +328,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     } finally {
       if (token === selection) {
         loadingEvents.value = retrySelection;
-        if (!loading.value && !disposed && !document.hidden) stream.start(current.value ? id : undefined);
+        if (!loading.value && !disposed && !document.hidden) stream.start(streamJob());
       }
     }
   }

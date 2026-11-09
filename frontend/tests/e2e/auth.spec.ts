@@ -443,6 +443,40 @@ test("a stream interruption preserves edits and recovers without recurring histo
   expect(api.historyRequests()).toBe(historyReads);
 });
 
+for (const failures of [1, 2]) {
+  test(`a saved selection recovers from ${failures} transient detail failures before its first result loads`, async ({ page }) => {
+    await page.clock.install();
+    const api = await accountApi(page, "A");
+    await page.goto("/");
+    await expect(page.getByRole("button", { name: "불러오기", exact: true })).toBeVisible();
+    await expect.poll(() => api.pushed.connections()).toBe(1);
+    let detailReads = 0;
+    await page.route(`**/api/jobs/${"a".repeat(32)}`, (route) => {
+      detailReads++;
+      return detailReads <= failures
+        ? route.fulfill({ status: 503, json: { detail: "signal ended" } })
+        : route.fallback();
+    });
+    // The selected completed job can be older than the stream's history window.
+    // Its unchanged status will not produce a job event to repair the selection.
+    api.hideHistory();
+    await chooseSession(page, "A");
+    await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+    await expect(page.locator(".status-bar .engine-indicator")).toHaveClass(/online/);
+    expect(detailReads).toBeGreaterThan(failures);
+    await expect(page).toHaveURL(new RegExp(`/sessions/${"a".repeat(32)}$`));
+    await expect(page.getByText(/signal ended|서버 오류/)).toHaveCount(0);
+    const cell = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+    await cell.click();
+    const settledReads = detailReads;
+    await api.pushed.snapshot();
+    await page.clock.runFor(120000);
+    await expect(cell).toHaveAttribute("aria-pressed", "true");
+    expect(detailReads).toBe(settledReads);
+    expect(api.historyRequests()).toBe(1);
+  });
+}
+
 test("an authoritative auth401 immediately removes an already verified workspace", async ({ page }) => {
   await accountApi(page, "A");
   await page.goto(`/sessions/${"a".repeat(32)}`);
