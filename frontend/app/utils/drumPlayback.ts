@@ -24,10 +24,12 @@ export function playbackHits(events: DrumEvent[], grid: Grid, duration: number):
   const hits = new Map<string, { hit: PlaybackHit; strength: number }>();
   const halfStep = (grid.step / 24) * 60 / grid.bpm;
   for (const event of events) {
+    if (event.time < 0 || event.time >= duration || !Number.isFinite(event.time)) continue;
     if (event.time < grid.offset - halfStep) continue;
     const tick = eventTick(event, grid);
-    const time = tickTime(tick, grid);
-    if (time < 0 || time >= duration) continue;
+    // Match MIDI's pickup clamp. Keep an in-source terminal hit scheduled even
+    // when quantization lands at EOF; the transport still ends at the source.
+    const time = Math.max(0, Math.min(Math.max(0, duration - 1e-6), tickTime(tick, grid)));
     const key = `${tick}:${event.pitch === 46 ? 42 : event.pitch}`;
     if (!hits.has(key) || event.strength > hits.get(key)!.strength) {
       hits.set(key, {

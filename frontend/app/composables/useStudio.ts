@@ -13,6 +13,7 @@ import { sessionIdFromPath, sessionPath } from "~/utils/sessionLocation";
 import { actionErrorMessage, isTransientReadError } from "~/utils/connection";
 import { discardUpload, uploadMedia } from "~/utils/upload";
 import { workspaceEvents } from "~/utils/workspaceEvents";
+import { alignmentGrid, canonicalAlignment, resolvedRevision, shiftFirstBar } from "~/utils/alignment";
 
 export function useStudio(userId: string, onUnauthorized: () => void) {
   const storageKey = `beatit-session:${userId}`;
@@ -29,6 +30,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   }
   const jobs = ref<Job[]>([]);
   const current = ref<Job | null>(null);
+  const pendingRemoteJob = shallowRef<Job | null>(null);
   const system = ref<SystemInfo | null>(null);
   const selectedFile = shallowRef<File | null>(null);
   const options = ref(defaultOptions());
@@ -49,7 +51,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   const originalEvents = ref<DrumEvent[]>([]);
   const beatReview = ref<BeatReview>({ grid_key: "", beats: [] });
   const originalReview = ref<BeatReview>({ grid_key: "", beats: [] });
-  type EditSnapshot = { events: DrumEvent[]; review: BeatReview };
+  type EditSnapshot = { kind: "events"; events: DrumEvent[]; review: BeatReview }
+    | { kind: "alignment"; offset: number | null };
   const undoStack = ref<EditSnapshot[]>([]);
   const redoStack = ref<EditSnapshot[]>([]);
   const error = ref("");
@@ -79,9 +82,13 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       reviewDirty.value ||
       (!!current.value?.result &&
         JSON.stringify(revision.value) !==
-          JSON.stringify(current.value.result.options)),
+          JSON.stringify(resolvedRevision(current.value.result))),
   );
   const result = computed(() => current.value?.result);
+  const savedOffset = computed(() => result.value ? resolvedRevision(result.value).offset : null);
+  const alignmentDirty = computed(() => !!result.value && revision.value.offset !== savedOffset.value);
+  const firstHit = computed(() => events.value.length
+    ? events.value.reduce((earliest, event) => Math.min(earliest, event.time), Infinity) : null);
   const toast = useToast();
   const copyEvents = (value: DrumEvent[]) =>
     value.map((event) => ({ ...event }));
@@ -89,9 +96,9 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     grid_key: value.grid_key,
     beats: value.beats.map((beat) => ({ ...beat, reasons: [...beat.reasons] })),
   });
-  const snapshot = (): EditSnapshot => ({
-    events: copyEvents(events.value), review: copyReview(beatReview.value),
-  });
+  const snapshot = (kind: EditSnapshot["kind"] = "events"): EditSnapshot => kind === "alignment"
+    ? { kind, offset: revision.value.offset }
+    : { kind, events: copyEvents(events.value), review: copyReview(beatReview.value) };
   let generation = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
@@ -101,6 +108,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   let resyncNeeded = false;
   let initialized = false;
   let retrySelection = false;
+  let pendingClientEdit: { id: string; draftKey: string } | null = null;
+  const draftKey = () => JSON.stringify([revision.value, events.value, metadata.value, beatReview.value]);
   const streamJob = () => current.value || retrySelection ? activeId.value : undefined;
   const pendingRequests = new Set<AbortController>();
   let uploadRequest: AbortController | undefined;
@@ -164,6 +173,30 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   async function showJob(job: Job, token: number) {
     if (token !== selection || disposed) return;
     if (current.value?.id === job.id && current.value.updated > job.updated) return;
+    const newGeneration = !!job.result && current.value?.result?.generation !== job.result.generation;
+    // An uncertain response can release the editor before publication arrives.
+    // Correlation alone must not replace drafts edited after that submission.
+    const ownAlignment = newGeneration && !pendingRemoteJob.value && !!pendingClientEdit &&
+      job.request?.client_edit_id === pendingClientEdit.id && pendingClientEdit.draftKey === draftKey();
+    const keepMetadata = metadataDirty.value;
+    const headingOnly = current.value?.id === job.id &&
+      current.value.result?.generation === job.result?.metadata_source_generation;
+    if (current.value?.id === job.id && current.value.result && job.result &&
+        current.value.result.generation !== job.result.generation &&
+        (alignmentDirty.value || pendingClientEdit || pendingRemoteJob.value) && !ownAlignment && !headingOnly) {
+      pendingRemoteJob.value = job;
+      pendingClientEdit = null;
+      // Keep the published grid and local draft while observing current job status.
+      displayRevision++;
+      loadingEvents.value = false;
+      current.value = { ...job, result: current.value.result };
+      return;
+    }
+    if (ownAlignment) {
+      pendingRemoteJob.value = null;
+      error.value = "";
+    }
+    if (["failed", "cancelled"].includes(job.status)) pendingClientEdit = null;
     const display = ++displayRevision;
     current.value = job;
     loadingEvents.value = false;
@@ -171,7 +204,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     if (next && next !== generation) {
       // A heading-only generation preserves the saved rhythm and local edit history.
       if (generation === `${job.id}:${job.result!.metadata_source_generation}`) {
-        metadata.value = savedMetadata(job);
+        if (!keepMetadata) metadata.value = savedMetadata(job);
         generation = next;
         return;
       }
@@ -185,11 +218,12 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
         originalEvents.value = copyEvents(loaded);
         beatReview.value = mergeBeatReview(loaded, job.result!.grid, job.result!.beat_review);
         originalReview.value = copyReview(beatReview.value);
-        revision.value = { ...job.result!.options };
+        revision.value = resolvedRevision(job.result!);
         metadata.value = savedMetadata(job);
         undoStack.value = [];
         redoStack.value = [];
         generation = next;
+        if (ownAlignment) pendingClientEdit = null;
       } finally {
         if (token === selection && display === displayRevision) loadingEvents.value = false;
       }
@@ -301,6 +335,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     const path = sessionPath(id);
     const token = ++selection;
     retrySelection = false;
+    pendingRemoteJob.value = null;
+    pendingClientEdit = null;
     activeId.value = id;
     current.value = null;
     generation = "";
@@ -335,6 +371,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   function newSession(locationMode: LocationMode = "push") {
     selection++;
     retrySelection = false;
+    pendingRemoteJob.value = null;
+    pendingClientEdit = null;
     activeId.value = null;
     current.value = null;
     generation = "";
@@ -461,8 +499,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       mutating.value = false;
     }
   }
-  function rememberEdit() {
-    undoStack.value.push(snapshot());
+  function rememberEdit(kind: EditSnapshot["kind"] = "events") {
+    undoStack.value.push(snapshot(kind));
     if (undoStack.value.length > 60) undoStack.value.shift();
     redoStack.value = [];
   }
@@ -479,20 +517,36 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     rememberEdit();
     beat.resolved = true;
   }
+  function shiftAlignment(beats: number) {
+    if (!result.value || busy.value || loadingEvents.value) return;
+    try {
+      const shifted = shiftFirstBar(revision.value, beats);
+      canonicalAlignment({ ...revision.value, offset: shifted.offset }, firstHit.value);
+      rememberEdit("alignment");
+      revision.value.offset = shifted.offset;
+    } catch (reason) { report(reason); }
+  }
+  function resetAlignment() {
+    if (!result.value || busy.value || loadingEvents.value || !alignmentDirty.value) return;
+    rememberEdit("alignment");
+    revision.value.offset = savedOffset.value;
+  }
+  function restoreEdit(edit: EditSnapshot) {
+    if (edit.kind === "alignment") revision.value.offset = edit.offset;
+    else { events.value = edit.events; beatReview.value = edit.review; }
+  }
   function undo() {
     const previous = undoStack.value.pop();
     if (previous) {
-      redoStack.value.push(snapshot());
-      events.value = previous.events;
-      beatReview.value = previous.review;
+      redoStack.value.push(snapshot(previous.kind));
+      restoreEdit(previous);
     }
   }
   function redo() {
     const next = redoStack.value.pop();
     if (next) {
-      undoStack.value.push(snapshot());
-      events.value = next.events;
-      beatReview.value = next.review;
+      undoStack.value.push(snapshot(next.kind));
+      restoreEdit(next);
     }
   }
   function resetEdits() {
@@ -500,11 +554,11 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     beatReview.value = copyReview(originalReview.value);
     undoStack.value = [];
     redoStack.value = [];
-    if (result.value) revision.value = { ...result.value.options };
+    if (result.value) revision.value = resolvedRevision(result.value);
     if (current.value) metadata.value = savedMetadata(current.value);
   }
   async function applyMetadata() {
-    if (!current.value?.result || busy.value || loadingEvents.value || !metadataDirty.value)
+    if (!current.value?.result || busy.value || loadingEvents.value || pendingRemoteJob.value || !metadataDirty.value)
       return;
     const token = selection;
     mutating.value = true;
@@ -530,11 +584,11 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     }
   }
   async function save() {
-    if (!current.value?.result || busy.value || loadingEvents.value) return;
+    if (!current.value?.result || busy.value || loadingEvents.value || pendingRemoteJob.value) return;
     if (
       !eventsDirty.value &&
       !reviewDirty.value &&
-      JSON.stringify(revision.value) === JSON.stringify(result.value!.options)
+      JSON.stringify(revision.value) === JSON.stringify(resolvedRevision(result.value!))
     ) {
       await applyMetadata();
       return;
@@ -548,15 +602,30 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     const token = selection;
     mutating.value = true;
     error.value = "";
+    let editId: string | null = null;
     try {
+      const preserve = alignmentDirty.value;
+      const savedOptions = preserve
+        ? { ...revision.value, offset: canonicalAlignment(revision.value, firstHit.value).offset }
+        : { ...revision.value, tom_refinement: true };
+      let review = beatReview.value;
+      if (preserve) {
+        try { review = mergeBeatReview(events.value, alignmentGrid(savedOptions, result.value!.duration, events.value)); }
+        catch { review = { grid_key: "", beats: [] }; }
+      }
+      if (preserve) {
+        editId = crypto.randomUUID();
+        pendingClientEdit = { id: editId, draftKey: draftKey() };
+      }
       const job = await api<Job>(`/api/jobs/${current.value.id}/score`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          options: { ...revision.value, tom_refinement: true },
-          events: eventsDirty.value ? events.value : null,
+          options: savedOptions,
+          events: preserve || eventsDirty.value ? events.value : null,
           metadata: metadata.value,
-          beat_review: beatReview.value,
+          beat_review: review,
+          ...(preserve ? { preserve_events: true, source_generation: result.value!.generation, client_edit_id: editId } : {}),
         }),
       });
       await showJob(job, token);
@@ -568,6 +637,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
         icon: "i-lucide-check",
       });
     } catch (e) {
+      if (editId && pendingClientEdit?.id === editId && (e as { status?: number }).status &&
+          (e as { status: number }).status < 500) pendingClientEdit = null;
       report(e);
     } finally {
       mutating.value = false;
@@ -609,12 +680,16 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   return {
     jobs,
     current,
+    pendingRemoteJob,
     system,
     selectedFile,
     options,
     revision,
     metadata,
     metadataDirty,
+    alignmentDirty,
+    savedOffset,
+    firstHit,
     events,
     beatReview,
     error,
@@ -643,6 +718,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     undo,
     redo,
     resetEdits,
+    shiftAlignment,
+    resetAlignment,
     save,
     applyMetadata,
   };

@@ -43,6 +43,20 @@ describe("bar audition and draft notes", () => {
       .toEqual([{ time: 0.5, pitch: 38, velocity: 105 }]);
     expect(playbackHits([event(0.16, 38)], { ...grid, step: 4 }, 8)[0]?.time).toBeCloseTo(1 / 6);
   });
+  it("schedules the source's first triplet hit at zero when its pickup grid snaps negative", () => {
+    const hits = playbackHits([{ ...event(0, 35), velocity: 31 }], { ...grid, offset: -0.05, step: 4 }, 8);
+    expect(hits).toEqual([{ time: 0, pitch: 35, velocity: 31 }]);
+    expect(firstPlaybackHit(hits, 0)).toBe(0);
+  });
+  it("retains an in-source terminal hit inside EOF, excluding source hits at or beyond EOF", () => {
+    const hits = playbackHits([{ ...event(7.99, 38), velocity: 77 }, event(8, 35), event(8.01, 49)], grid, 8);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ pitch: 38, velocity: 77 });
+    expect(hits[0]!.time).toBeGreaterThan(7.999);
+    expect(hits[0]!.time).toBeLessThan(8);
+    expect(firstPlaybackHit(hits, 7.9)).toBe(0);
+    expect(firstPlaybackHit(hits, 8.01)).toBe(1);
+  });
   it("seeks without replaying earlier hits, including empty patterns", () => {
     const notes = playbackHits([event(0, 35), event(0.5, 38), event(2, 49)], grid, 8);
     expect(firstPlaybackHit(notes, 0)).toBe(0);

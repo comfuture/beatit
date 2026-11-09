@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mockWorkspaceEvents } from "./workspaceEvents";
 import type { BeatReview, DrumEvent, ScoreMetadata, SystemInfo } from "../../app/types/studio";
+import { alignmentGrid } from "../../app/utils/alignment";
 const id = "a".repeat(32);
 const settings = {
   bpm: 120,
@@ -53,18 +54,26 @@ function sampleJob() {
     },
   };
 }
-async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, events = initialEvents as DrumEvent[], audioTone = false, colab = false, serverManaged = false, modal = false, mediaBaseUrl = "" } = {}) {
+async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, bpm = 120,
+  meter = "4/4", grid = "16", legacyTiming = false, events = initialEvents as DrumEvent[], audioTone = false,
+  colab = false, serverManaged = false, modal = false, mediaBaseUrl = "" } = {}) {
   const colabExecution = colab || serverManaged;
   const remoteExecution = colabExecution || modal;
   let job = sampleJob();
   job.result.grid.offset = offset;
   job.result.options.offset = offset;
+  Object.assign(job.result.options, { bpm, meter, grid });
+  if (bpm !== 120 || meter !== "4/4" || grid !== "16")
+    job.result.grid = alignmentGrid(job.result.options, job.result.duration, events);
+  if (legacyTiming) Object.assign(job.result.options, { bpm: null, offset: null });
   if (multiPage) job.result.pages.push("score-2.svg");
   let history = true;
   let saved: any = null;
   let heading: ScoreMetadata | null = null;
   let pendingHeading: ScoreMetadata | null = null;
   let rejectHeading = false;
+  let rejectScore = 0;
+  const scoreRequests: any[] = [];
   let jobEvents = structuredClone(events);
   let systemRequests = 0;
   const runtime: NonNullable<SystemInfo["remote_runtime"]> = {
@@ -200,13 +209,18 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
     }
     if (path.endsWith("/score")) {
       saved = route.request().postDataJSON();
+      scoreRequests.push(structuredClone(saved));
+      if (rejectScore) return route.fulfill({ status: rejectScore,
+        json: { detail: "악보가 변경되었습니다. 새 악보를 불러온 뒤 다시 적용하세요." } });
       if (saved.events) jobEvents = saved.events;
       job.result.options = saved.options;
       job.result.metadata = saved.metadata;
       job.result.beat_review = saved.beat_review;
       job.result.metadata_source_generation = undefined;
       job.result.generation += "-revised";
-      job.result.grid.bpm = saved.options.bpm;
+      job.result.grid = alignmentGrid(saved.options, job.result.duration, jobEvents);
+      (job as any).request = { options: saved.options, ...(saved.client_edit_id ? { client_edit_id: saved.client_edit_id } : {}) };
+      job.updated++;
       return route.fulfill({ status: 202, json: job });
     }
     if (path.endsWith("/score-metadata")) {
@@ -258,6 +272,14 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
     pushed,
     readRequests: () => ({ ...readRequests }),
     getSaved: () => saved,
+    currentJob: () => structuredClone(job),
+    publishJob: (next: ReturnType<typeof sampleJob>, nextEvents = jobEvents) => {
+      job = structuredClone(next);
+      jobEvents = structuredClone(nextEvents);
+      return pushed.emit("job", { job });
+    },
+    scoreRequests: () => scoreRequests,
+    rejectScore: (status: number) => { rejectScore = status; },
     getHeading: () => heading,
     rejectHeading: (value: boolean) => { rejectHeading = value; },
     systemRequests: () => systemRequests,
@@ -595,6 +617,337 @@ test("edit, undo, redo, save, score and export use session data", async ({
     "href",
     new RegExp(`/api/jobs/${id}/files/score.musicxml.*download=true`),
   );
+  expect(state.errors).toEqual([]);
+});
+
+test("first-bar draft moves, inverse, undo and reset preserve manual edits before publishing one shared grid", async ({ page }) => {
+  await audioProbe(page);
+  const sourceEvents: DrumEvent[] = [...initialEvents,
+    { time: 1.25, pitch: 45, strength: 0.65, velocity: 42, tom_source_pitch: 47, tom_match_score: 0.88 }];
+  const state = await setup(page, { events: sourceEvents });
+  await openSession(page);
+  const audioUrl = await page.locator("audio").getAttribute("src");
+  await page.getByRole("button", { name: "편집 도움말", exact: true }).click();
+  await page.getByRole("slider", { name: "새 타격 세기" }).press("End");
+  await page.keyboard.press("Escape");
+  const edited = page.getByRole("button", { name: "1마디 2번째 격자 High tom", exact: true });
+  await edited.click();
+  await page.getByLabel("악보 제목").fill("Hayeon draft");
+  await page.getByLabel("저자", { exact: true }).fill("papa");
+  const requested = page.locator('output[aria-label="첫 마디 기준 박"]');
+  await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  await expect(requested).toHaveText("0.5박");
+  await expect(page.locator('output[aria-label="저장할 마디 기준 박"]')).toHaveText("-3.5박");
+  await expect(edited).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("악보 재생성 후 전체 마디·재생·내보내기에 적용됩니다.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "−0.5박 앞당김", exact: true }).click();
+  await expect(requested).toHaveText("0박");
+  await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  await page.getByRole("spinbutton", { name: "템포 BPM" }).fill("126");
+  await page.getByRole("button", { name: "실행 취소", exact: true }).click();
+  await expect(requested).toHaveText("0박");
+  await expect(page.getByRole("spinbutton", { name: "템포 BPM" })).toHaveValue("126");
+  await page.getByRole("button", { name: "다시 실행", exact: true }).click();
+  await page.getByRole("button", { name: "위치 되돌리기", exact: true }).click();
+  await expect(requested).toHaveText("0박");
+  await expect(edited).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("악보 제목")).toHaveValue("Hayeon draft");
+  await expect(page.getByRole("spinbutton", { name: "템포 BPM" })).toHaveValue("126");
+  await page.getByRole("button", { name: "실행 취소", exact: true }).click();
+  await page.getByRole("spinbutton", { name: "템포 BPM" }).fill("120");
+  await expect(requested).toHaveText("0.5박");
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+  const saved = state.getSaved();
+  expect(saved).toMatchObject({ preserve_events: true, source_generation: "render-1",
+    options: { offset: -1.75, bpm: 120, tom_refinement: false }, metadata: { title: "Hayeon draft", author: "papa" } });
+  expect(saved.events).toEqual([...sourceEvents, { time: 0.125, pitch: 50, strength: 0.8, velocity: 127 }]
+    .sort((a, b) => a.time - b.time));
+  expect(state.scoreRequests()).toHaveLength(1);
+  await expect(requested).toHaveText("-3.5박");
+  await expect(page.locator("audio")).toHaveAttribute("src", audioUrl!);
+  await expect(page.getByRole("button", { name: "1마디 15번째 격자 Kick", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "1마디 16번째 격자 High tom", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await toggleTrack(page, "드럼비트");
+  await page.getByRole("spinbutton", { name: "편집 마디" }).fill("2");
+  await page.getByRole("button", { name: "2마디 구간재생", exact: true }).click();
+  await expect(page.getByRole("group", { name: "선택구간", exact: true })).toContainText("00:00.2–00:02.2");
+  await expect.poll(() => page.evaluate(() => (window as any).__audioProbe.notes.some((note: any) => note.frequency === 185))).toBe(true);
+  await page.getByRole("button", { name: "일시 정지", exact: true }).click();
+  await page.getByRole("tab", { name: "악보 보기" }).click();
+  await page.getByRole("button", { name: "2마디 시작으로 이동", exact: true }).click();
+  await expect(page.getByRole("slider", { name: "오디오 재생 위치" })).toHaveAttribute("aria-valuenow", "0.25");
+  await expect(page.locator(".score-paper")).toHaveAttribute("src", /v=render-1-revised$/);
+  await page.getByRole("button", { name: "내보내기", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "MIDI · 악보 격자", exact: true })).toHaveAttribute("href", /score.mid\?v=render-1-revised&download=true$/);
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await expect(requested).toHaveText("-3.5박");
+  await expect(page.getByLabel("악보 제목")).toHaveValue("Hayeon draft");
+  await expect(page.getByRole("button", { name: "1마디 16번째 격자 High tom", exact: true })).toHaveAttribute("aria-pressed", "true");
+  expect(state.errors).toEqual([]);
+});
+
+test("an alignment generation conflict preserves every draft until an explicit retry", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  await page.getByLabel("악보 제목").fill("Unsaved title");
+  const edited = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+  await edited.click();
+  await page.getByRole("button", { name: "−0.5박 앞당김", exact: true }).click();
+  state.rejectScore(409);
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.getByText("악보가 변경되었습니다. 새 악보를 불러온 뒤 다시 적용하세요.", { exact: true })).toBeVisible();
+  await expect(page.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("-0.5박");
+  await expect(edited).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("악보 제목")).toHaveValue("Unsaved title");
+  expect(state.scoreRequests()).toHaveLength(1);
+  state.rejectScore(0);
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+  expect(state.scoreRequests()).toHaveLength(2);
+  const { client_edit_id: firstId, ...firstRequest } = state.scoreRequests()[0];
+  const { client_edit_id: secondId, ...secondRequest } = state.scoreRequests()[1];
+  expect(secondRequest).toEqual(firstRequest);
+  expect(secondId).not.toBe(firstId);
+  await expect(page.getByLabel("악보 제목")).toHaveValue("Unsaved title");
+  expect(state.errors).toEqual([]);
+});
+
+test("a remote generation after409 keeps alignment drafts until the existing discard decision", async ({ page }) => {
+  await page.clock.install();
+  const state = await setup(page);
+  await openSession(page);
+  await page.getByLabel("악보 제목").fill("Keep this local title");
+  const edited = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+  await edited.click();
+  await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  state.rejectScore(409);
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.getByText("악보가 변경되었습니다. 새 악보를 불러온 뒤 다시 적용하세요.", { exact: true })).toBeVisible();
+  const remote = state.currentJob();
+  remote.updated++;
+  remote.result.generation = "render-remote";
+  remote.result.metadata = { title: "Remote title", author: "Another editor" };
+  remote.result.options.offset = -0.5;
+  remote.result.grid = alignmentGrid(remote.result.options, remote.result.duration, initialEvents);
+  (remote as any).request = { options: remote.result.options, client_edit_id: "another-client" };
+  await state.publishJob(remote, initialEvents);
+  await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toBeVisible();
+  await expect(page.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("0.5박");
+  await expect(page.getByLabel("악보 제목")).toHaveValue("Keep this local title");
+  await expect(edited).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "내보내기", exact: true })).toBeDisabled();
+  const reads = state.readRequests();
+  await page.clock.runFor(120000);
+  expect(state.readRequests()).toEqual(reads);
+  await page.getByRole("button", { name: "새 악보 불러오기", exact: true }).click();
+  const discard = page.getByRole("dialog", { name: "편집 내용을 버릴까요?" });
+  await expect(discard).toBeVisible();
+  await discard.getByRole("button", { name: "편집 계속", exact: true }).click();
+  await expect(edited).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("악보 제목")).toHaveValue("Keep this local title");
+  await page.getByRole("button", { name: "새 악보 불러오기", exact: true }).click();
+  await discard.getByRole("button", { name: "변경 버리고 이동", exact: true }).click();
+  await expect(page.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("-1박");
+  await expect(page.getByLabel("악보 제목")).toHaveValue("Remote title");
+  await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toHaveCount(0);
+  expect(state.errors).toEqual([]);
+});
+
+test("an own alignment publication arriving before its HTTP acknowledgement applies by client edit ID", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  let release!: () => void;
+  const held = new Promise<void>((done) => { release = done; });
+  let request: any;
+  await page.route(`**/api/jobs/${id}/score`, async (route) => {
+    request = route.request().postDataJSON();
+    const own = state.currentJob();
+    own.updated++;
+    own.result.generation = "render-own-early";
+    own.result.options = request.options;
+    own.result.grid = alignmentGrid(request.options, own.result.duration, request.events);
+    own.result.metadata = request.metadata;
+    (own as any).request = { options: request.options, client_edit_id: request.client_edit_id };
+    await state.publishJob(own, request.events);
+    await held;
+    await route.fulfill({ status: 202, json: own });
+  });
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("-3.5박");
+  await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toHaveCount(0);
+  expect(request.client_edit_id).toMatch(/^[0-9a-f-]{36}$/);
+  release();
+  await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "+0.5박 늦춤", exact: true })).toBeEnabled();
+  expect(state.errors).toEqual([]);
+});
+
+for (const laterEdit of ["none", "metadata", "tempo", "hits", "undo", "reset"] as const) {
+  test(`an uncertain alignment response protects a later ${laterEdit} draft from its own publication`, async ({ page }) => {
+    const state = await setup(page);
+    await openSession(page);
+    await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+    let submitted: any;
+    await page.route(`**/api/jobs/${id}/score`, (route) => {
+      submitted = route.request().postDataJSON();
+      return route.fulfill({ status: 503, json: { detail: "Acknowledgement unavailable" } });
+    });
+    await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+    await expect(page.getByText("서버에 연결할 수 없습니다. 다시 시도하세요.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "+0.5박 늦춤", exact: true })).toBeEnabled();
+    if (laterEdit === "metadata") await page.getByLabel("악보 제목").fill("Newer metadata draft");
+    if (laterEdit === "tempo") await page.getByRole("spinbutton", { name: "템포 BPM" }).fill("126");
+    if (laterEdit === "undo") await page.getByRole("button", { name: "실행 취소", exact: true }).click();
+    if (laterEdit === "reset") await page.getByRole("button", { name: "위치 되돌리기", exact: true }).click();
+    const edited = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+    if (laterEdit === "hits") await edited.click();
+    const own = state.currentJob();
+    own.updated++;
+    own.result.generation = "render-uncertain";
+    own.result.options = submitted.options;
+    own.result.grid = alignmentGrid(submitted.options, own.result.duration, submitted.events);
+    own.result.metadata = submitted.metadata;
+    (own as any).request = { options: submitted.options, client_edit_id: submitted.client_edit_id };
+    await state.publishJob(own, submitted.events);
+    if (laterEdit === "none") {
+      await expect(page.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("-3.5박");
+      await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("서버에 연결할 수 없습니다. 다시 시도하세요.", { exact: true })).toHaveCount(0);
+    } else {
+      await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+      if (laterEdit === "metadata") await expect(page.getByLabel("악보 제목")).toHaveValue("Newer metadata draft");
+      if (laterEdit === "tempo") await expect(page.getByRole("spinbutton", { name: "템포 BPM" })).toHaveValue("126");
+      if (laterEdit === "hits") await expect(edited).toHaveAttribute("aria-pressed", "true");
+      if (laterEdit === "undo" || laterEdit === "reset")
+        await expect(page.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("0박");
+    }
+    expect(state.errors).toEqual([]);
+  });
+}
+
+test("a failed alignment retaining its old result retries edited drafts with a fresh Save ID", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  let firstRequest: any;
+  await page.route(`**/api/jobs/${id}/score`, async (route) => {
+    if (firstRequest) return route.fallback();
+    firstRequest = route.request().postDataJSON();
+    const queued = state.currentJob();
+    queued.status = "queued";
+    queued.updated++;
+    queued.progress = { stage: "engraving", progress: 0.8, message: "새 악보 조판 중" };
+    (queued as any).request = { options: firstRequest.options, client_edit_id: firstRequest.client_edit_id };
+    await state.publishJob(queued);
+    await route.fulfill({ status: 202, json: queued });
+  });
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.getByRole("button", { name: "+0.5박 늦춤", exact: true })).toBeDisabled();
+  const failed = state.currentJob();
+  failed.updated++;
+  failed.status = "failed";
+  await state.publishJob(failed);
+  await expect(page.getByRole("button", { name: "+0.5박 늦춤", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "다시 시도", exact: true })).toHaveCount(0);
+  await page.getByLabel("악보 제목").fill("Changed after the failure");
+  await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("-3박");
+  expect(state.getSaved().client_edit_id).not.toBe(firstRequest.client_edit_id);
+  expect(state.getSaved()).toMatchObject({ source_generation: "render-1", preserve_events: true,
+    options: { offset: -1.5 }, metadata: { title: "Changed after the failure" } });
+  await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toHaveCount(0);
+  expect(state.errors).toEqual([]);
+});
+
+test("a compatible heading generation keeps dirty local metadata and alignment", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  await page.getByLabel("악보 제목").fill("Local heading draft");
+  await page.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  const heading = state.currentJob();
+  heading.updated++;
+  heading.result.metadata_source_generation = heading.result.generation;
+  heading.result.generation += "-external-heading";
+  heading.result.metadata = { title: "External heading", author: "Other" };
+  await state.publishJob(heading);
+  await expect(page.getByLabel("악보 제목")).toHaveValue("Local heading draft");
+  await expect(page.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("0.5박");
+  await expect(page.getByText("새 악보가 도착했습니다", { exact: true })).toHaveCount(0);
+  expect(state.errors).toEqual([]);
+});
+
+for (const timing of [
+  { meter: "4/4", bpm: 60, grid: "16", quarters: 4 },
+  { meter: "3/4", bpm: 120, grid: "16", quarters: 3 },
+  { meter: "6/8", bpm: 137.3, grid: "triplet", quarters: 3 },
+  { meter: "7/8", bpm: 120, grid: "8", quarters: 3.5 },
+]) {
+  test(`first-bar shifts use quarter-note beats in ${timing.meter} at ${timing.bpm} BPM`, async ({ page }) => {
+    const state = await setup(page, timing);
+    await openSession(page);
+    await expect(page.getByText("1박 = 4분음표 · 6/8·7/8도 동일", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "+1박 늦춤", exact: true }).click();
+    const requested = page.locator('output[aria-label="첫 마디 기준 박"]');
+    expect(Number((await requested.innerText()).replace("박", ""))).toBeCloseTo(1, 3);
+    await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+    await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+    expect(state.getSaved().options.offset).toBeCloseTo((1 - timing.quarters) * 60 / timing.bpm, 4);
+    expect(state.getSaved().events).toEqual(initialEvents);
+    expect(state.getSaved().preserve_events).toBe(true);
+    expect(state.errors).toEqual([]);
+  });
+}
+
+test("legacy resolved timing starts clean and unresolved tempo disables beat movement", async ({ page }) => {
+  await setup(page, { legacyTiming: true, bpm: 137.3, offset: -0.23 });
+  await openSession(page);
+  await expect(page.getByRole("spinbutton", { name: "템포 BPM" })).toHaveValue("137.3");
+  await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+  await page.getByRole("spinbutton", { name: "템포 BPM" }).fill("");
+  for (const name of ["−1박 앞당김", "−0.5박 앞당김", "+0.5박 늦춤", "+1박 늦춤"])
+    await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
+  await expect(page.getByText("BPM과 첫 마디 기준을 확인한 뒤 이동하세요.", { exact: true })).toBeVisible();
+});
+
+test("beat movement explains a boundary without requiring seconds in the normal control", async ({ page }) => {
+  await setup(page);
+  await openSession(page);
+  await page.getByRole("button", { name: "초 단위 위치", exact: true }).click();
+  await page.getByRole("spinbutton", { name: "첫 마디 시작", exact: true }).fill("-10");
+  await page.getByRole("button", { name: "초 단위 위치", exact: true }).click();
+  await expect(page.getByRole("button", { name: "−0.5박 앞당김", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "+0.5박 늦춤", exact: true })).toBeEnabled();
+  await expect(page.getByText("이 방향으로 더 이동할 수 없습니다.", { exact: true })).toBeVisible();
+  await expect(page.getByText("첫 마디 시작은 -10–120초 범위로 입력하세요.", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "위치 되돌리기", exact: true }).click();
+  await expect(page.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("0박");
+});
+
+test("beat movement fits compact properties and keeps its canonical preview visible", async ({ page }, testInfo) => {
+  const state = await setup(page);
+  await openSession(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "속성 패널", exact: true }).click();
+  const properties = page.getByRole("dialog", { name: "악보 설정", exact: true });
+  await properties.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  await expect(properties.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("0.5박");
+  await expect(properties.locator('output[aria-label="저장할 마디 기준 박"]')).toHaveText("-3.5박");
+  expect(await properties.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const save = properties.getByRole("button", { name: "악보 재생성", exact: true });
+  await save.click({ trial: true });
+  await page.screenshot({ path: testInfo.outputPath("alignment-mobile.png") });
+  await properties.getByRole("button", { name: "위치 되돌리기", exact: true }).click();
+  await expect(properties.locator('output[aria-label="첫 마디 기준 박"]')).toHaveText("0박");
+  await properties.getByRole("button", { name: "+0.5박 늦춤", exact: true }).click();
+  await save.click();
+  await expect(properties).toBeHidden();
+  await expect.poll(() => state.getSaved()?.options.offset).toBe(-1.75);
   expect(state.errors).toEqual([]);
 });
 
@@ -1017,6 +1370,20 @@ test("fixed beats remain pending until resolved, including after regeneration", 
   expect(state.errors).toEqual([]);
 });
 
+test("alignment rechecks review hints on the corrected grid without carrying old confirmations", async ({ page }) => {
+  const state = await setup(page, { events: suspiciousEvents });
+  await openSession(page);
+  await page.locator('[data-review-tick="0"]').getByRole("button", { name: "해결", exact: true }).click();
+  await page.getByRole("button", { name: "−0.5박 앞당김", exact: true }).click();
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeDisabled();
+  expect(JSON.parse(state.getSaved().beat_review.grid_key)).toEqual([120, -0.25, "4/4", 48, 3]);
+  expect(state.getSaved().beat_review.beats.length).toBeGreaterThan(0);
+  expect(state.getSaved().beat_review.beats.every((beat: any) => !beat.resolved)).toBe(true);
+  expect(state.getSaved().events).toEqual(suspiciousEvents);
+  expect(state.errors).toEqual([]);
+});
+
 test("suspicious beat review is usable on a compact screen", async ({ page }) => {
   const state = await setup(page, { events: suspiciousEvents });
   await openSession(page);
@@ -1098,6 +1465,34 @@ const auditionEvents: DrumEvent[] = [
   { time: 3.5, pitch: 46, strength: 0.8 },
   { time: 4, pitch: 49, strength: 0.8 },
 ];
+
+for (const boundary of ["pickup", "terminal"] as const) {
+  test(`the synth schedules the ${boundary} source hit at its playback boundary`, async ({ page }) => {
+    await audioProbe(page);
+    const state = await setup(page, boundary === "pickup"
+      ? { offset: -0.05, grid: "triplet", events: [{ time: 0, pitch: 35, strength: 0.8, velocity: 31 }] }
+      : { events: [{ time: 7.99, pitch: 38, strength: 0.8, velocity: 77 }, { time: 8, pitch: 35, strength: 0.8 }] });
+    await openSession(page);
+    if (boundary === "terminal") {
+      await page.locator("audio").evaluate((audio: HTMLAudioElement) => {
+        audio.currentTime = 7.85;
+        audio.dispatchEvent(new Event("timeupdate"));
+      });
+      await expect(page.getByRole("slider", { name: "오디오 재생 위치" })).toHaveAttribute("aria-valuenow", "7.85");
+    }
+    await toggleTrack(page, "드럼비트");
+    await toggleTrack(page, "오디오");
+    await page.getByRole("button", { name: "재생", exact: true }).click();
+    const frequency = boundary === "pickup" ? 145 : 185;
+    await expect.poll(() => page.evaluate((frequency) =>
+      (window as any).__audioProbe.notes.filter((note: any) => note.frequency === frequency).length, frequency)).toBe(1);
+    if (boundary === "terminal") {
+      expect(await page.evaluate(() => (window as any).__audioProbe.notes.some((note: any) => note.frequency === 145))).toBe(false);
+      await expect(page.getByRole("button", { name: "재생", exact: true })).toBeVisible();
+    }
+    expect(state.errors).toEqual([]);
+  });
+}
 
 test("bar playback mixes selected audio and draft drums then stops both at the boundary", async ({ page }) => {
   await audioProbe(page, 0, 80);
