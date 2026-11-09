@@ -14,6 +14,37 @@ from sqlalchemy.pool import QueuePool
 _JSON_COLUMNS = {"request", "progress", "result", "payloads"}
 
 
+def mysql_tls_context(hostname: str | None, query: dict[str, list[str]]):
+    """Require verified TLS remotely; CA-only verification is an explicit opt-in.
+
+    OCI-generated server certificates may lack the private/tunnel hostname. A
+    pinned CA can authenticate those endpoints with VERIFY_CA while keeping
+    certificate-chain verification mandatory. The default verifies identity.
+    """
+    for name in ("ssl_mode", "ssl_ca"):
+        values = query.get(name, [])
+        if len(values) > 1 or (values and not values[0].strip()):
+            raise RuntimeError(f"MySQL {name} must have exactly one nonempty value.")
+    specified_mode = query.get("ssl_mode", [None])[0]
+    mode = specified_mode.upper() if specified_mode is not None else "VERIFY_IDENTITY"
+    if mode not in {"VERIFY_CA", "VERIFY_IDENTITY"}:
+        raise RuntimeError("MySQL ssl_mode supports only VERIFY_CA or VERIFY_IDENTITY.")
+    ca = query.get("ssl_ca", [None])[0]
+    if mode == "VERIFY_CA" and not ca:
+        raise RuntimeError("MySQL ssl_mode=VERIFY_CA requires an explicit ssl_ca certificate.")
+    local = hostname in {"localhost", "127.0.0.1", "::1"}
+    if local and ca is None and specified_mode is None:
+        return None  # Disposable local development DB or private Access tunnel.
+    try:
+        context = ssl.create_default_context(cafile=ca)
+    except (OSError, ssl.SSLError):
+        raise RuntimeError("Unable to load the MySQL ssl_ca certificate.") from None
+    context.verify_mode = ssl.CERT_REQUIRED
+    if mode == "VERIFY_CA":
+        context.check_hostname = False
+    return context
+
+
 class Result:
     def __init__(self, cursor):
         self.rowcount = cursor.rowcount
@@ -86,13 +117,8 @@ class Database:
         self.name = unquote(parsed.path.lstrip("/"))
         if not re.fullmatch(r"[A-Za-z0-9_]+", self.name):
             raise ValueError("Use a dedicated MySQL database with a simple database name.")
-        query = parse_qs(parsed.query)
-        local = parsed.hostname in {"localhost", "127.0.0.1", "::1"}
-        context = None
-        if ca := query.get("ssl_ca", [None])[0]:
-            context = ssl.create_default_context(cafile=ca)
-        elif not local:
-            context = ssl.create_default_context()
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        context = mysql_tls_context(parsed.hostname, query)
 
         # A local endpoint can be a Cloudflare Access TCP tunnel. Its remote hop
         # must be protected by Access; direct OCI connections validate server TLS.
