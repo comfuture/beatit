@@ -1,0 +1,891 @@
+{
+  "date": "2026-11-09",
+  "timezone": "Asia/Seoul",
+  "observed_at_utc": "2026-11-09T03:54:52.698602+00:00",
+  "source_revision": "695c8103fe426560e286dc1727a2115ec51d2374",
+  "named_source_revision": "c39726afb1b59e3a64142635edbb804ffbf2e49c",
+  "deployment_url": "https://modal.com/apps/comfuture/main/deployed/beatit",
+  "image": {
+    "name": "beatit-processing:py312-cu128-volume-8e06b89eeb19-v1",
+    "image_id": "im-ecJN06c4l8KRQMWJqpvJhv",
+    "environment": "main",
+    "elapsed_seconds": 4.411
+  },
+  "named_registry": [
+    {
+      "tag": "beatit-processing:py312-cu128-volume-8e06b89eeb19-v1",
+      "image_id": "im-ecJN06c4l8KRQMWJqpvJhv",
+      "created_at": "2026-11-09 12:52:08+09:00",
+      "updated_at": "2026-11-09 12:52:08+09:00"
+    }
+  ],
+  "named_deployment_platform_seconds": 2.809,
+  "deployed_resources": {
+    "gpu": [
+      [
+        "T4",
+        1
+      ]
+    ],
+    "cpu": 2.0,
+    "memory_mib": 8192,
+    "public_endpoint": null
+  },
+  "input": {
+    "duration_seconds": 275.121,
+    "bytes": 4345654,
+    "sha256": "19b0b9e4a362f0f51fdb745eb45196f2a13cca3f8518f3bba818b422198b4fd9",
+    "source": "existing full-track qualification fixture"
+  },
+  "one_time_setup": {
+    "initial_dependency_build": {
+      "started_utc": "2026-11-09T03:24:01.257260+00:00",
+      "elapsed_seconds": 130.542,
+      "exit_code": 1,
+      "note": "Dependency images built successfully; initial app registration was then blocked by the workspace payment-method gate, subsequently resolved."
+    },
+    "cached_deployment": {
+      "started_utc": "2026-11-09T03:36:07.425780+00:00",
+      "elapsed_seconds": 5.341,
+      "exit_code": 0
+    },
+    "cold_model_preparation": {
+      "started_utc": "2026-11-09T03:29:33.863357+00:00",
+      "call_id": "fc-01M6Z5NNYX2JWBP76YPF5XRXEP",
+      "manifest": {
+        "fingerprint": "8e06b89eeb19af0518d314d35bb5d7a254716d3f00fa582b7f4fa9ba841569f9",
+        "bytes": 602871815,
+        "models": [
+          "htdemucs",
+          "drumsep",
+          "beat-this",
+          "adtof"
+        ],
+        "files": [
+          {
+            "path": "huggingface/.agent_harnesses.json",
+            "bytes": 5778
+          },
+          {
+            "path": "huggingface/hub/CACHEDIR.TAG",
+            "bytes": 191
+          },
+          {
+            "path": "huggingface/hub/blobs/.huggingface-shared-blobs",
+            "bytes": 2
+          },
+          {
+            "path": "huggingface/hub/.locks/models--adefossez--HTDemucs/0d5f2089fa3e1a0335d93de070f6802598cd4a4d.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/.locks/models--adefossez--HTDemucs/d9fa14133cfcc034a6758923bb3a8ca9f8dfd0b582134643bbf83f72c17576dd.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/.locks/models--xavriley--source_separation_mirror/1f8e636fb674b88a52c8399fde9a4ebe2b72b065ca07eed4e03ab1c9f0bfb2e0.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/blobs/d6/d6487147b31512c1f65182852fe1c24c3ab2416ec3f29dcca4a566e96ce15fd6",
+            "bytes": 84025440
+          },
+          {
+            "path": "huggingface/hub/blobs/d6/d6487147b31512c1f65182852fe1c24c3ab2416ec3f29dcca4a566e96ce15fd6.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/blobs/d6/d6487147b31512c1f65182852fe1c24c3ab2416ec3f29dcca4a566e96ce15fd6.refs",
+            "bytes": 99
+          },
+          {
+            "path": "huggingface/hub/blobs/e4/e4305b9a16b4639e86492bfeb11dcc6cd86fc233f5e850e39fa4f996ea28e184",
+            "bytes": 437648758
+          },
+          {
+            "path": "huggingface/hub/blobs/e4/e4305b9a16b4639e86492bfeb11dcc6cd86fc233f5e850e39fa4f996ea28e184.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/blobs/e4/e4305b9a16b4639e86492bfeb11dcc6cd86fc233f5e850e39fa4f996ea28e184.refs",
+            "bytes": 114
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/blobs/0d5f2089fa3e1a0335d93de070f6802598cd4a4d",
+            "bytes": 21
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/blobs/d9fa14133cfcc034a6758923bb3a8ca9f8dfd0b582134643bbf83f72c17576dd",
+            "bytes": 84025440
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/refs/main",
+            "bytes": 40
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/snapshots/cbc8a9b1a87023b7fd74e7b3412e6321c0eab003/955717e8.safetensors",
+            "bytes": 84025440
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/snapshots/cbc8a9b1a87023b7fd74e7b3412e6321c0eab003/htdemucs.yaml",
+            "bytes": 21
+          },
+          {
+            "path": "huggingface/hub/models--xavriley--source_separation_mirror/blobs/1f8e636fb674b88a52c8399fde9a4ebe2b72b065ca07eed4e03ab1c9f0bfb2e0",
+            "bytes": 437648758
+          },
+          {
+            "path": "huggingface/hub/models--xavriley--source_separation_mirror/snapshots/da6dc5af5458a296e04cbf52b97babced90eb908/drumsep_5stems_mdx23c_jarredou.ckpt",
+            "bytes": 437648758
+          },
+          {
+            "path": "huggingface/xet/logs/xet_20261109T032952251+0000_2.log",
+            "bytes": 133231
+          },
+          {
+            "path": "torch/hub/checkpoints/beat_this-final0.ckpt",
+            "bytes": 81058141
+          }
+        ],
+        "storage": "volume",
+        "preparation": {
+          "cache_reused": false,
+          "elapsed_seconds": 14.762,
+          "container_id": "ta-01M6Z5NP798S6232YWP41Y9VVR"
+        }
+      },
+      "wall_seconds": 30.216
+    },
+    "reused_model_preparation": {
+      "started_utc": "2026-11-09T03:31:07.469384+00:00",
+      "call_id": "fc-01M6Z5R8P9831G7AK7CDE27DFJ",
+      "manifest": {
+        "fingerprint": "8e06b89eeb19af0518d314d35bb5d7a254716d3f00fa582b7f4fa9ba841569f9",
+        "bytes": 602871815,
+        "models": [
+          "htdemucs",
+          "drumsep",
+          "beat-this",
+          "adtof"
+        ],
+        "files": [
+          {
+            "path": "huggingface/.agent_harnesses.json",
+            "bytes": 5778
+          },
+          {
+            "path": "huggingface/hub/CACHEDIR.TAG",
+            "bytes": 191
+          },
+          {
+            "path": "huggingface/hub/blobs/.huggingface-shared-blobs",
+            "bytes": 2
+          },
+          {
+            "path": "huggingface/hub/.locks/models--adefossez--HTDemucs/0d5f2089fa3e1a0335d93de070f6802598cd4a4d.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/.locks/models--adefossez--HTDemucs/d9fa14133cfcc034a6758923bb3a8ca9f8dfd0b582134643bbf83f72c17576dd.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/.locks/models--xavriley--source_separation_mirror/1f8e636fb674b88a52c8399fde9a4ebe2b72b065ca07eed4e03ab1c9f0bfb2e0.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/blobs/d6/d6487147b31512c1f65182852fe1c24c3ab2416ec3f29dcca4a566e96ce15fd6",
+            "bytes": 84025440
+          },
+          {
+            "path": "huggingface/hub/blobs/d6/d6487147b31512c1f65182852fe1c24c3ab2416ec3f29dcca4a566e96ce15fd6.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/blobs/d6/d6487147b31512c1f65182852fe1c24c3ab2416ec3f29dcca4a566e96ce15fd6.refs",
+            "bytes": 99
+          },
+          {
+            "path": "huggingface/hub/blobs/e4/e4305b9a16b4639e86492bfeb11dcc6cd86fc233f5e850e39fa4f996ea28e184",
+            "bytes": 437648758
+          },
+          {
+            "path": "huggingface/hub/blobs/e4/e4305b9a16b4639e86492bfeb11dcc6cd86fc233f5e850e39fa4f996ea28e184.lock",
+            "bytes": 0
+          },
+          {
+            "path": "huggingface/hub/blobs/e4/e4305b9a16b4639e86492bfeb11dcc6cd86fc233f5e850e39fa4f996ea28e184.refs",
+            "bytes": 114
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/blobs/0d5f2089fa3e1a0335d93de070f6802598cd4a4d",
+            "bytes": 21
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/blobs/d9fa14133cfcc034a6758923bb3a8ca9f8dfd0b582134643bbf83f72c17576dd",
+            "bytes": 84025440
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/refs/main",
+            "bytes": 40
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/snapshots/cbc8a9b1a87023b7fd74e7b3412e6321c0eab003/955717e8.safetensors",
+            "bytes": 84025440
+          },
+          {
+            "path": "huggingface/hub/models--adefossez--HTDemucs/snapshots/cbc8a9b1a87023b7fd74e7b3412e6321c0eab003/htdemucs.yaml",
+            "bytes": 21
+          },
+          {
+            "path": "huggingface/hub/models--xavriley--source_separation_mirror/blobs/1f8e636fb674b88a52c8399fde9a4ebe2b72b065ca07eed4e03ab1c9f0bfb2e0",
+            "bytes": 437648758
+          },
+          {
+            "path": "huggingface/hub/models--xavriley--source_separation_mirror/snapshots/da6dc5af5458a296e04cbf52b97babced90eb908/drumsep_5stems_mdx23c_jarredou.ckpt",
+            "bytes": 437648758
+          },
+          {
+            "path": "huggingface/xet/logs/xet_20261109T032952251+0000_2.log",
+            "bytes": 133231
+          },
+          {
+            "path": "torch/hub/checkpoints/beat_this-final0.ckpt",
+            "bytes": 81058141
+          }
+        ],
+        "storage": "volume",
+        "preparation": {
+          "cache_reused": true,
+          "elapsed_seconds": 1.828,
+          "container_id": "ta-01M6Z5R8XS9774JCE2RQAWPSSR"
+        }
+      },
+      "wall_seconds": 8.636
+    }
+  },
+  "runs": [
+    {
+      "label": "first",
+      "index": 1,
+      "directory": "1383846cc4dc442187bf0847e8ae8295",
+      "wall_seconds": 153.468,
+      "duration_seconds": 275.11,
+      "events": 1594,
+      "pages": 3,
+      "runtime": {
+        "gpu": "T4",
+        "model_storage": "volume",
+        "elapsed_seconds": 126.03,
+        "gpu_name": "Tesla T4",
+        "container_id": "ta-01M6Z66NJ2CJG2VSFG2KD8JW2R",
+        "app": "beatit",
+        "environment": "main",
+        "model_fingerprint": "8e06b89eeb19af0518d314d35bb5d7a254716d3f00fa582b7f4fa9ba841569f9",
+        "preparation_call_id": "fc-01M6Z669E54B413M7VE3EMYGTT",
+        "model_preparation": {
+          "cache_reused": true,
+          "elapsed_seconds": 2.706,
+          "container_id": "ta-01M6Z66A9K277NTHZ08DZSYAZR"
+        },
+        "call_id": "fc-01M6Z66MRPQFY638NMDGZB4518",
+        "phase_seconds": {
+          "model_preparation": 9.435,
+          "pack_input": 0.127,
+          "upload": 2.631,
+          "gpu_call": 134.126,
+          "download": 5.848,
+          "validate_import": 0.718
+        },
+        "total_elapsed_seconds": 152.886
+      },
+      "media": {
+        "audio.wav": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "drums.wav": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-cymbals.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-hh.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-kick.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-snare.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-toms.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        }
+      },
+      "estimated_cpu_preparation_usd": 0.000207,
+      "estimated_gpu_usd": 0.026625,
+      "estimated_total_usd": 0.026832,
+      "modal_function_stats": {
+        "since": "2026-11-09 03:38:50.143910+00:00",
+        "until": "2026-11-09 03:42:03.310531+00:00",
+        "input_success_count": 1,
+        "input_failure_count": 0,
+        "input_timeout_count": 0,
+        "input_running_at_end_count": 0,
+        "input_percentile_stats": {
+          "End-to-end latency (s)": {
+            "unit": "seconds",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 133.615598
+              },
+              {
+                "percentile": 90.0,
+                "value": 133.615598
+              },
+              {
+                "percentile": 99.0,
+                "value": 133.615598
+              }
+            ]
+          },
+          "Execution time (s)": {
+            "unit": "seconds",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 129.206148
+              },
+              {
+                "percentile": 90.0,
+                "value": 129.206148
+              },
+              {
+                "percentile": 99.0,
+                "value": 129.206148
+              }
+            ]
+          }
+        },
+        "container_started_count": 1,
+        "container_error_count": 0,
+        "container_creating_at_end_count": 0,
+        "container_percentile_stats": {
+          "Memory Usage (GiB)": {
+            "unit": "GiB",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 1.0167617797851562
+              },
+              {
+                "percentile": 90.0,
+                "value": 1.409783172607422
+              },
+              {
+                "percentile": 99.0,
+                "value": 1.9418879699707032
+              }
+            ]
+          },
+          "Startup time (s)": {
+            "unit": "seconds",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 3.452263
+              },
+              {
+                "percentile": 90.0,
+                "value": 3.452263
+              },
+              {
+                "percentile": 99.0,
+                "value": 3.452263
+              }
+            ]
+          },
+          "CPU Usage (cores)": {
+            "unit": "cores",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 1.0480729820364791
+              },
+              {
+                "percentile": 90.0,
+                "value": 1.1206771786381167
+              },
+              {
+                "percentile": 99.0,
+                "value": 1.3292264936790845
+              }
+            ]
+          },
+          "GPU Utilization (%)": {
+            "unit": "percent",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 2.5
+              },
+              {
+                "percentile": 90.0,
+                "value": 100.0
+              },
+              {
+                "percentile": 99.0,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "container_total_count": 1,
+        "variant_count": 0,
+        "all_variants": false
+      },
+      "decoded_midi_notes": {
+        "score.mid": 1589,
+        "performance.mid": 1594
+      },
+      "artifact_directory": "work/modal-qualification-20261109/first/1383846cc4dc442187bf0847e8ae8295/render-1794195665398787449"
+    },
+    {
+      "label": "repeat",
+      "index": 1,
+      "directory": "80e4b94149364bf292cf891d9448803a",
+      "wall_seconds": 147.628,
+      "duration_seconds": 275.11,
+      "events": 1605,
+      "pages": 3,
+      "runtime": {
+        "gpu": "T4",
+        "model_storage": "volume",
+        "elapsed_seconds": 123.04,
+        "gpu_name": "Tesla T4",
+        "container_id": "ta-01M6Z6CPR5XMHYR7TSCETHCJ3R",
+        "app": "beatit",
+        "environment": "main",
+        "model_fingerprint": "8e06b89eeb19af0518d314d35bb5d7a254716d3f00fa582b7f4fa9ba841569f9",
+        "preparation_call_id": "fc-01M6Z6CD079VVV3BV73KFM2Z9G",
+        "model_preparation": {
+          "cache_reused": true,
+          "elapsed_seconds": 2.889,
+          "container_id": "ta-01M6Z6CDRVZGCZ9PV70ZC1ZXXR"
+        },
+        "call_id": "fc-01M6Z6CPHDAGNNPRGK8NMYF762",
+        "phase_seconds": {
+          "model_preparation": 7.419,
+          "pack_input": 0.127,
+          "upload": 2.71,
+          "gpu_call": 129.932,
+          "download": 6.097,
+          "validate_import": 0.75
+        },
+        "total_elapsed_seconds": 147.035
+      },
+      "media": {
+        "audio.wav": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "drums.wav": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-cymbals.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-hh.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-kick.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-snare.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        },
+        "stem-toms.flac": {
+          "seconds": 275.1100453514739,
+          "frames": 12132353
+        }
+      },
+      "estimated_cpu_preparation_usd": 0.000215,
+      "estimated_gpu_usd": 0.026003,
+      "estimated_total_usd": 0.026218,
+      "modal_function_stats": {
+        "since": "2026-11-09 03:42:10.527008+00:00",
+        "until": "2026-11-09 03:45:12.382503+00:00",
+        "input_success_count": 1,
+        "input_failure_count": 0,
+        "input_timeout_count": 0,
+        "input_running_at_end_count": 0,
+        "input_percentile_stats": {
+          "End-to-end latency (s)": {
+            "unit": "seconds",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 129.356234
+              },
+              {
+                "percentile": 90.0,
+                "value": 129.356234
+              },
+              {
+                "percentile": 99.0,
+                "value": 129.356234
+              }
+            ]
+          },
+          "Execution time (s)": {
+            "unit": "seconds",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 126.167637
+              },
+              {
+                "percentile": 90.0,
+                "value": 126.167637
+              },
+              {
+                "percentile": 99.0,
+                "value": 126.167637
+              }
+            ]
+          }
+        },
+        "container_started_count": 1,
+        "container_error_count": 0,
+        "container_creating_at_end_count": 0,
+        "container_percentile_stats": {
+          "Startup time (s)": {
+            "unit": "seconds",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 2.864062
+              },
+              {
+                "percentile": 90.0,
+                "value": 2.864062
+              },
+              {
+                "percentile": 99.0,
+                "value": 2.864062
+              }
+            ]
+          },
+          "CPU Usage (cores)": {
+            "unit": "cores",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 1.0498357945548353
+              },
+              {
+                "percentile": 90.0,
+                "value": 1.1160907652741199
+              },
+              {
+                "percentile": 99.0,
+                "value": 1.3681013074024713
+              }
+            ]
+          },
+          "Memory Usage (GiB)": {
+            "unit": "GiB",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 1.0163993835449219
+              },
+              {
+                "percentile": 90.0,
+                "value": 1.5539932250976562
+              },
+              {
+                "percentile": 99.0,
+                "value": 1.939938735961914
+              }
+            ]
+          },
+          "GPU Utilization (%)": {
+            "unit": "percent",
+            "percentiles": [
+              {
+                "percentile": 50.0,
+                "value": 31.5
+              },
+              {
+                "percentile": 90.0,
+                "value": 100.0
+              },
+              {
+                "percentile": 99.0,
+                "value": 100.0
+              }
+            ]
+          }
+        },
+        "container_total_count": 1,
+        "variant_count": 0,
+        "all_variants": false
+      },
+      "decoded_midi_notes": {
+        "score.mid": 1600,
+        "performance.mid": 1605
+      },
+      "artifact_directory": "work/modal-qualification-20261109/reuse/80e4b94149364bf292cf891d9448803a/render-1794195858713164925"
+    }
+  ],
+  "comparison": {
+    "samples_per_condition": 1,
+    "wall_seconds_saved": 5.84,
+    "wall_percent_saved": 3.81,
+    "both_use_new_gpu_containers": true,
+    "note": "Both full runs use the already built dependency image and CPU-prepared model Volume; each is a full fresh inference run, not a cached result."
+  },
+  "named_image_smoke": {
+    "started_utc": "2026-11-09T03:53:19.004506+00:00",
+    "source_revision": "c39726afb1b59e3a64142635edbb804ffbf2e49c",
+    "input_bytes": 2116878,
+    "input_sha256": "3963d06b1444dc81de427e40cad654c157ebef74a6fe0022996e478e04a864ad",
+    "runs": [
+      {
+        "index": 1,
+        "directory": "a76d623385e94fcb916558bcbe75ed1d",
+        "wall_seconds": 64.524,
+        "duration_seconds": 12.0,
+        "events": 59,
+        "pages": 1,
+        "runtime": {
+          "gpu": "T4",
+          "model_storage": "volume",
+          "elapsed_seconds": 45.73,
+          "gpu_name": "Tesla T4",
+          "container_id": "ta-01M6Z711S8107TSK31B0YSK4YR",
+          "app": "beatit",
+          "environment": "main",
+          "model_fingerprint": "8e06b89eeb19af0518d314d35bb5d7a254716d3f00fa582b7f4fa9ba841569f9",
+          "preparation_call_id": "fc-01M6Z70ST0XGGP1AD3ZHQTFWMD",
+          "model_preparation": {
+            "cache_reused": true,
+            "elapsed_seconds": 0.744,
+            "container_id": "ta-01M6Z70TQTJAG89ESBKXJCSY8R"
+          },
+          "call_id": "fc-01M6Z7105WVTQ4827GPEJFZY1C",
+          "phase_seconds": {
+            "model_preparation": 4.391,
+            "pack_input": 0.072,
+            "upload": 2.546,
+            "gpu_call": 55.147,
+            "download": 1.752,
+            "validate_import": 0.05
+          },
+          "total_elapsed_seconds": 63.957
+        },
+        "media": {
+          "audio.wav": {
+            "seconds": 12.0,
+            "frames": 529200
+          },
+          "drums.wav": {
+            "seconds": 12.0,
+            "frames": 529200
+          },
+          "stem-cymbals.flac": {
+            "seconds": 12.0,
+            "frames": 529200
+          },
+          "stem-hh.flac": {
+            "seconds": 12.0,
+            "frames": 529200
+          },
+          "stem-kick.flac": {
+            "seconds": 12.0,
+            "frames": 529200
+          },
+          "stem-snare.flac": {
+            "seconds": 12.0,
+            "frames": 529200
+          },
+          "stem-toms.flac": {
+            "seconds": 12.0,
+            "frames": 529200
+          }
+        },
+        "estimated_cpu_preparation_usd": 0.000121,
+        "estimated_gpu_usd": 0.009926,
+        "estimated_total_usd": 0.010047
+      }
+    ],
+    "rates_usd_per_second": {
+      "T4": 0.000164,
+      "cpu_core": 1.31e-05,
+      "memory_gib": 2.22e-06
+    },
+    "pricing_source": "https://modal.com/pricing",
+    "cost_method": "Resource-rate estimates; excludes image build, storage, egress and unmeasured container startup. Not an invoice.",
+    "finished_utc": "2026-11-09T03:54:23.558201+00:00"
+  },
+  "cost_estimation": {
+    "pricing_url": "https://modal.com/pricing",
+    "rates_usd_per_second": {
+      "T4": 0.000164,
+      "cpu_core": 1.31e-05,
+      "memory_gib": 2.22e-06
+    },
+    "method": "Resource-rate estimates; excludes image build, storage, egress and unmeasured container startup. Not an invoice.",
+    "cpu_cores": 2,
+    "requested_memory_gib": 8,
+    "idle_tail_seconds": 2,
+    "note": "Per-run estimates use measured function-body seconds plus a two-second tail; Modal container startup/preflight, image builds, network and storage are not included in those per-run estimates."
+  },
+  "reported_workspace_usage": {
+    "total_usd": "0.08732365",
+    "by_resource_usd": {
+      "CPU": "0.02060031",
+      "Memory": "0.00891533",
+      "Network Egress": "0.00088618",
+      "T4": "0.05692183"
+    },
+    "rows": [
+      {
+        "object_id": "ap-2HwFh5qMdni9yyUnA05LJu",
+        "description": "beatit-model-preparation",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "Memory",
+        "cost": "0.00003557"
+      },
+      {
+        "object_id": "ap-2HwFh5qMdni9yyUnA05LJu",
+        "description": "beatit-model-preparation",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "CPU",
+        "cost": "0.00005258"
+      },
+      {
+        "object_id": "ap-IOHBZk9gfawlB8cup5alE2",
+        "description": "beatit",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "Memory",
+        "cost": "0.00841616"
+      },
+      {
+        "object_id": "ap-IOHBZk9gfawlB8cup5alE2",
+        "description": "beatit",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "CPU",
+        "cost": "0.01244013"
+      },
+      {
+        "object_id": "ap-IOHBZk9gfawlB8cup5alE2",
+        "description": "beatit",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "T4",
+        "cost": "0.05692183"
+      },
+      {
+        "object_id": "ap-VrWRqVxFnqGIWRtTAFxHGP",
+        "description": "beatit",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "Memory",
+        "cost": "0.00010802"
+      },
+      {
+        "object_id": "ap-VrWRqVxFnqGIWRtTAFxHGP",
+        "description": "beatit",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "Network Egress",
+        "cost": "0.00081924"
+      },
+      {
+        "object_id": "ap-VrWRqVxFnqGIWRtTAFxHGP",
+        "description": "beatit",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "CPU",
+        "cost": "0.00758201"
+      },
+      {
+        "object_id": "ap-cTwztA4GrCpzkgQTBbO2ck",
+        "description": "beatit-model-preparation",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "Memory",
+        "cost": "0.00035558"
+      },
+      {
+        "object_id": "ap-cTwztA4GrCpzkgQTBbO2ck",
+        "description": "beatit-model-preparation",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "Network Egress",
+        "cost": "0.00006694"
+      },
+      {
+        "object_id": "ap-cTwztA4GrCpzkgQTBbO2ck",
+        "description": "beatit-model-preparation",
+        "environment": "main",
+        "interval_start": "2026-11-09T03:00:00",
+        "resource": "CPU",
+        "cost": "0.00052559"
+      }
+    ],
+    "scope": "All Beatit qualification usage, including image build, CPU preparation, diagnostic/failed attempts, two full transcriptions, named-image validation and the short smoke test. Provider usage report, not a final invoice or exact per-call allocation."
+  },
+  "validation": {
+    "both_full_runs_cuda_separation_and_transcription": true,
+    "musicxml_and_all_svg_pages_parsed": true,
+    "seven_audio_artifacts_per_run_decoded_and_nonempty": true,
+    "both_midi_artifacts_per_run_decoded": true,
+    "first_svg_page_rasterized_and_visually_checked": true,
+    "detection_counts": [
+      1594,
+      1605
+    ],
+    "detection_difference_percent": 0.69,
+    "determinism_note": "The production pipeline retains Demucs --shifts 1, whose upstream implementation samples a random offset. The two observed outputs are not identical; this is a runtime/artifact qualification, not an annotated transcription-accuracy evaluation."
+  },
+  "operational_fixes": [
+    "Keep UV_CACHE_DIR outside the model Volume mount path.",
+    "Catch the SDK built-in TimeoutError while polling FunctionCall.get.",
+    "Create progress storage before the first asynchronous GPU job."
+  ],
+  "final_runtime_state": {
+    "prepare_models": {
+      "backlog": 0,
+      "num_total_runners": 0,
+      "num_running_inputs": 0,
+      "input_headroom": 0
+    },
+    "transcribe": {
+      "backlog": 0,
+      "num_total_runners": 0,
+      "num_running_inputs": 0,
+      "input_headroom": 0
+    },
+    "temporary_job_file_count": 0
+  }
+}

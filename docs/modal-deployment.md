@@ -1,5 +1,9 @@
 # Modal processing engine
 
+The deployed app and first/repeat GPU measurements were qualified on 2026-11-09;
+see the [measured deployment report](benchmarks/modal-2026-11-09.md) and its JSON
+evidence for actual timings, costs, artifacts and remaining measurement limits.
+
 Beatit defaults to **local** when `DRUM_EXECUTION_BACKEND` is unset. This deployment
 explicitly selects Modal. The engine is a **service setting**, not a user-facing
 selector. Existing local Mac/CPU/CUDA and Colab implementations remain available.
