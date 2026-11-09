@@ -130,9 +130,19 @@ def collect_staged_objects(store):
                         "SELECT 1 FROM beatit.artifacts WHERE object_key=%s LIMIT 1", (key,)
                     ).fetchone()
                     if not referenced:
+                        # Deleting storage bytes cannot roll back with SQL.
+                        # Persist a non-publishable state first, keeping the
+                        # session lock across this commit and the external delete.
+                        # A crash or failed cleanup COMMIT leaves a durable fence
+                        # and a retriable journal instead of restoring ready.
+                        connection.execute(
+                            "UPDATE beatit.pending_object_uploads SET state='collecting' WHERE object_key=%s",
+                            (key,),
+                        )
+                        connection.raw.commit()
                         store.objects.delete(key)
-                    # Publication holds this same row lock and removes the journal
-                    # with its new reference. A collector winner fences publication.
+                    # If this transaction rolls back, collecting stays committed.
+                    # Publication accepts only ready, so an old token stays fenced.
                     connection.execute(
                         "DELETE FROM beatit.pending_object_uploads WHERE object_key=%s", (key,)
                     )

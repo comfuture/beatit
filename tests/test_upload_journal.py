@@ -3,6 +3,7 @@
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from uuid import uuid4
 
 import pytest
@@ -273,3 +274,141 @@ def test_retired_reused_snapshot_cannot_resurrect_a_collected_key(journal_store)
             store._write_manifests(connection, identifier, stale)
     assert store.file_path(identifier, "input").read_bytes() == b"replacement bytes"
     assert stored_keys(store) == {replacement[0]["object_key"]}
+
+
+def staged_replacement(store):
+    identifier = submit(store)
+    original = store.artifact_manifest(identifier, "input")
+    directory = store.directory(identifier)
+    (directory / "input").write_bytes(b"new staged private recording")
+    manifests, _ = store._capture(identifier, directory)
+    expire(store)
+    return identifier, original, manifests, manifests[0]["object_key"]
+
+
+def test_collecting_checkpoint_survives_cleanup_rollback_and_fences_old_publisher(
+    journal_store, monkeypatch
+):
+    store = journal_store
+    identifier, original, manifests, staged_key = staged_replacement(store)
+    connect, delete = store.connect, store.objects.delete
+    deleted = False
+    failed = False
+
+    def actual_delete(key):
+        nonlocal deleted
+        delete(key)
+        assert not (store.objects.root / key).exists()
+        deleted = True
+
+    @contextmanager
+    def cleanup_transaction_fails():
+        nonlocal failed
+        with connect() as connection:
+            yield connection
+            if deleted and not failed:
+                failed = True
+                # The storage DELETE completed, but the SQL journal removal
+                # rolls back. A READY row here would authorize missing bytes.
+                raise OSError("database failed after object deletion")
+
+    monkeypatch.setattr(store.objects, "delete", actual_delete)
+    monkeypatch.setattr(store, "connect", cleanup_transaction_fails)
+    store.collect_garbage()
+    assert deleted and failed
+    assert len(pending(store)) == 1
+    assert pending(store)[0]["state"] == "collecting"
+    assert pending(store)[0]["object_key"] == staged_key
+    assert stored_keys(store) == {original["object_key"]}
+    with pytest.raises(ValueError, match="expired before publication"):
+        with store.connect() as connection:
+            store._write_manifests(connection, identifier, manifests)
+    assert store.artifact_manifest(identifier, "input") == original
+    monkeypatch.setattr(store, "connect", connect)
+    store.collect_garbage()  # Retrying an already-deleted object is safe.
+    assert pending(store) == []
+    assert stored_keys(store) == {original["object_key"]}
+    assert store.file_path(identifier, "input").read_bytes() == b"private input"
+
+
+def test_collecting_checkpoint_is_visible_to_another_connection_before_storage_delete(
+    journal_store, monkeypatch
+):
+    store = journal_store
+    _, original, _, staged_key = staged_replacement(store)
+    delete = store.objects.delete
+    states_at_delete = []
+
+    def observe_then_delete(key):
+        assert key == staged_key
+        with store.db.connection() as observer:
+            row = observer.execute(
+                "SELECT state FROM beatit.pending_object_uploads WHERE object_key=%s", (key,)
+            ).fetchone()
+        states_at_delete.append(row["state"])
+        assert row["state"] == "collecting"
+        delete(key)
+
+    monkeypatch.setattr(store.objects, "delete", observe_then_delete)
+    store.collect_garbage()
+    assert states_at_delete == ["collecting"]
+    assert pending(store) == []
+    assert stored_keys(store) == {original["object_key"]}
+
+
+@pytest.mark.parametrize("commit_ack_lost", [False, True])
+def test_collecting_checkpoint_commit_failure_skips_storage_delete_and_recovers(
+    journal_store, monkeypatch, commit_ack_lost
+):
+    store = journal_store
+    identifier, original, manifests, staged_key = staged_replacement(store)
+    connect, delete = store.connect, store.objects.delete
+    failed = False
+    deletions = []
+
+    def recorded_delete(key):
+        deletions.append(key)
+        delete(key)
+
+    @contextmanager
+    def failing_checkpoint():
+        nonlocal failed
+        with connect() as connection:
+            raw = connection.raw
+
+            class UnconfirmedCommit:
+                def __getattr__(self, name):
+                    return getattr(raw, name)
+
+                def commit(self):
+                    nonlocal failed
+                    row = connection.execute(
+                        "SELECT state FROM beatit.pending_object_uploads WHERE object_key=%s",
+                        (staged_key,),
+                    ).fetchone()
+                    if not failed and row and row["state"] == "collecting":
+                        failed = True
+                        if commit_ack_lost:
+                            raw.commit()
+                        raise OSError("collector checkpoint commit was not confirmed")
+                    return raw.commit()
+
+            connection.raw = UnconfirmedCommit()
+            yield connection
+
+    monkeypatch.setattr(store.objects, "delete", recorded_delete)
+    monkeypatch.setattr(store, "connect", failing_checkpoint)
+    store.collect_garbage()
+    assert failed and deletions == []
+    assert stored_keys(store) == {original["object_key"], staged_key}
+    assert pending(store)[0]["state"] == ("collecting" if commit_ack_lost else "ready")
+    if commit_ack_lost:
+        with pytest.raises(ValueError, match="expired before publication"):
+            with store.connect() as connection:
+                store._write_manifests(connection, identifier, manifests)
+    monkeypatch.setattr(store, "connect", connect)
+    store.collect_garbage()
+    assert deletions == [staged_key]
+    assert pending(store) == []
+    assert store.artifact_manifest(identifier, "input") == original
+    assert stored_keys(store) == {original["object_key"]}
