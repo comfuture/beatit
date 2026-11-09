@@ -397,7 +397,7 @@ test("heading drafts guard navigation and survive a failed apply", async ({ page
   await page.getByRole("button", { name: "편집 계속" }).click();
   state.rejectHeading(true);
   await page.getByRole("button", { name: "적용", exact: true }).click();
-  await expect(page.getByText("악보 정보 적용 실패", { exact: true })).toBeVisible();
+  await expect(page.getByText("서버에 연결할 수 없습니다. 다시 시도하세요.", { exact: true })).toBeVisible();
   await expect(page.getByLabel("악보 제목")).toHaveValue("Draft title");
   await page.getByRole("tab", { name: "악보 보기" }).click();
   await expect(page.locator(".score-paper")).toHaveAttribute("src", /v=render-1$/);

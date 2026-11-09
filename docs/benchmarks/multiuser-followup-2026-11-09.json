@@ -1,0 +1,97 @@
+{
+  "date": "2026-11-09",
+  "timezone": "Asia/Seoul",
+  "origin": {
+    "source_commit": "7c00a2c",
+    "image": "beatit:issue7-7c00a2c",
+    "image_id": "sha256:b62ae5bfbfd4aaedf21000420178fffc24e48766d55207c88e9fe939a095b543",
+    "health": "healthy",
+    "compose_project": "beatit-multiuser",
+    "media_base_url": "/media",
+    "public_url": "https://beatit.changkyun.kim"
+  },
+  "worker": {
+    "version": "31fd3ed7-8682-4712-9f3b-882155bf0bd1",
+    "route": "beatit.changkyun.kim/media/*",
+    "bucket_private": true,
+    "session_and_owner_rechecked_every_request": true,
+    "body_path": "R2 binding -> Worker -> browser; origin receives metadata authorization only"
+  },
+  "backfill": {
+    "completed_jobs": 7,
+    "preview_files": 14,
+    "source_manifests_results_timestamps_options_revisions_unchanged": true,
+    "failed_encodings": 0,
+    "profile": "aac-96k-faststart-v1",
+    "original_wav_downloads_preserved": true
+  },
+  "long_recording": {
+    "duration_seconds": 275.11,
+    "wav_bytes": 48529490,
+    "aac_bytes": 3365915,
+    "reduction_percent": 93.06,
+    "browser": "Mac Chrome",
+    "observation_seconds": 53.386,
+    "media_clock_start": 0.070958,
+    "media_clock_end": 53.405485,
+    "ready_state": 4,
+    "fully_buffered_end_seconds": 275.11,
+    "operator_confirmed_uninterrupted_streaming": true
+  },
+  "public_fixture_probe": {
+    "identity_source": "two tagged synthetic DB sessions; not Google provider logins",
+    "codec": "audio/mp4",
+    "bytes": 79293,
+    "first_byte_seconds": 1.031,
+    "full_download_seconds": 1.427,
+    "sha256_matches_manifest": true,
+    "checks": [
+      "anonymous401",
+      "crossOwner404",
+      "fullBytesManifestHash",
+      "boundedRange206",
+      "clippedBoundedRange206",
+      "suffixRange206",
+      "HEAD200",
+      "unsatisfiable416",
+      "revokedNextRange401"
+    ],
+    "cleanup": "exact synthetic identities/rows only; source R2 objects retained"
+  },
+  "browser_ui": {
+    "permalink_reload_and_google_return": true,
+    "tablet_820_settings_inline_navigation_closed": true,
+    "mobile_390_both_panels_closed_after_tablet_transition": true,
+    "login_and_new_session_copy_reduced": true,
+    "origin_stop_seconds": 15,
+    "verified_editor_retained_during_outage": true,
+    "neutral_notice_automatically_cleared": true,
+    "raw_signal_or_auth_failure_text_shown": false,
+    "audio_continuity_during_restart": "not asserted; player was paused at observation"
+  },
+  "validation": {
+    "python_cases": 319,
+    "frontend_unit_cases": 50,
+    "worker_cases": 22,
+    "full_playwright_suite": "See current PR checks; includes write-failure wording contract",
+    "required_ci": [
+      "Python Linux/macOS",
+      "real MySQL 8.4",
+      "frontend typecheck/unit/build/Playwright",
+      "Worker tests and Wrangler dry-run"
+    ]
+  },
+  "limits": [
+    "Single-client functional observations, not a load test or bandwidth distribution.",
+    "Second real Google profile skipped at operator request; synthetic sessions do not replace provider evidence.",
+    "Provider-native backup retention was not inspected; application+object restore drill is recorded separately."
+  ],
+  "private_evidence": [
+    "work/issue7/aac-backfill.jsonl",
+    "work/issue7/edge-media-smoke.json",
+    "work/issue7/aac-browser-playback.json",
+    "work/issue7/live-reconnect.json",
+    "work/issue7/final-new-session-tablet.png",
+    "work/issue7/final-mobile-390.png"
+  ]
+}
