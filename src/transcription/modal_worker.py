@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 import signal
 import tempfile
 import time
@@ -44,9 +45,62 @@ def save_call(directory: Path, call):
     record = call_record(directory)
     record.parent.mkdir(mode=0o700, exist_ok=True)
     save_json(record, {"call_id": call.object_id})
+    # The DB record survives losing scratch or deleting a project. A failed
+    # registration raises so run() immediately attempts to cancel spawned work.
+    if context := _database_context():
+        database, job_id, token = context
+        try:
+            with database.connection() as connection:
+                slot = connection.execute(
+                    "SELECT * FROM beatit.worker_slot WHERE id=1 FOR UPDATE"
+                ).fetchone()
+                job = connection.execute(
+                    "SELECT status,claim_token FROM beatit.jobs WHERE id=%s FOR UPDATE", (job_id,)
+                ).fetchone()
+                now = float(
+                    connection.execute(
+                        "SELECT UNIX_TIMESTAMP(UTC_TIMESTAMP(6)) AS stamp"
+                    ).fetchone()["stamp"]
+                )
+                if (
+                    not job
+                    or job["status"] != "running"
+                    or job["claim_token"] != token
+                    or slot["token"] != token
+                    or slot["lease_until"] <= now
+                ):
+                    raise RuntimeError("Inference lease was lost before remote call registration.")
+                connection.execute(
+                    "INSERT IGNORE INTO beatit.remote_calls(call_id,job_id,claim_token,created) VALUES (%s,%s,%s,%s)",
+                    (call.object_id, job_id, token, time.time()),
+                )
+        finally:
+            database.close()
+
+
+def _database_context():
+    job_id = os.environ.get("BEATIT_JOB_ID")
+    token = os.environ.get("BEATIT_CLAIM_TOKEN")
+    if not job_id and not token:
+        return None  # Standalone operator/benchmark mode retains local recovery.
+    if not job_id or not token:
+        raise RuntimeError("Both Beatit job ID and claim token are required.")
+    from .database import Database
+
+    return Database(), job_id, token
 
 
 def clear_call(directory: Path):
+    if context := _database_context():
+        database, job_id, token = context
+        try:
+            with database.connection() as connection:
+                connection.execute(
+                    "DELETE FROM beatit.remote_calls WHERE job_id=%s AND claim_token=%s",
+                    (job_id, token),
+                )
+        finally:
+            database.close()
     call_record(directory).unlink(missing_ok=True)
     (directory / CALL_FILE).unlink(missing_ok=True)  # Older worker compatibility.
 
@@ -102,6 +156,13 @@ def download(volume, remote: str, destination: Path):
             output.write(chunk)
 
 
+def cancel_remote_call(call_id):
+    try:
+        modal.FunctionCall.from_id(call_id).cancel(terminate_containers=True)
+    except modal.exception.NotFoundError:
+        pass  # An expired/deleted remote call cannot consume inference capacity.
+
+
 def cancel_record(directory: Path):
     """Also used after server restart or a forced worker termination."""
     record = call_record(directory)
@@ -116,7 +177,7 @@ def cancel_record(directory: Path):
         return
     load_credentials()
     value = json.loads(record.read_text())
-    modal.FunctionCall.from_id(value["call_id"]).cancel(terminate_containers=True)
+    cancel_remote_call(value["call_id"])
     clear_call(directory)
 
 

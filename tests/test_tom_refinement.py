@@ -4,7 +4,6 @@ import json
 import numpy as np
 import pytest
 import soundfile as sf
-from fastapi.testclient import TestClient
 
 from transcription.models import Options
 from transcription.tom_refinement import refine_toms, restore_inferred_toms
@@ -146,13 +145,19 @@ def test_cached_revision_can_enable_and_disable_refinement_without_inference(tmp
 
 
 @pytest.mark.parametrize("status", ["failed", "cancelled"])
-def test_retry_initial_refinement_resumes_from_onset_and_tempo_cache(tmp_path, monkeypatch, status):
+@pytest.mark.mysql
+def test_retry_initial_refinement_resumes_from_onset_and_tempo_cache(
+    tmp_path,
+    monkeypatch,
+    status,
+    authenticated_app,
+    authenticated_client,
+):
     monkeypatch.setenv("DRUM_EXECUTION_BACKEND", "local")
     from transcription import pipeline, tom_refinement
-    from transcription.app import create_app
 
-    app = create_app(tmp_path, start_worker=False)
-    with TestClient(app) as client:
+    app = authenticated_app(tmp_path)
+    with authenticated_client(app) as client:
         options = Options(tom_refinement=True, renderer="verovio", device="cpu").model_dump()
         identifier = client.post(
             "/api/jobs",

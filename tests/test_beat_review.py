@@ -2,11 +2,12 @@ import json
 import zipfile
 
 import pytest
-from fastapi.testclient import TestClient
 
 from transcription import pipeline
-from transcription.app import create_app
 from transcription.models import Options
+
+pytestmark = pytest.mark.mysql
+
 
 REVIEW = {
     "grid_key": '[120,0,"4/4",48,3]',
@@ -14,9 +15,13 @@ REVIEW = {
 }
 
 
-def test_review_survives_revision_worker_metadata_and_reload(tmp_path):
-    app = create_app(tmp_path, start_worker=False)
-    with TestClient(app) as client:
+def test_review_survives_revision_worker_metadata_and_reload(
+    tmp_path,
+    authenticated_app,
+    authenticated_client,
+):
+    app = authenticated_app(tmp_path)
+    with authenticated_client(app) as client:
         identifier = client.post("/api/jobs", files={"file": ("song.wav", b"x")}).json()["id"]
         directory = tmp_path / identifier
         options = Options(bpm=120, offset=0, renderer="verovio").model_dump()
@@ -67,8 +72,13 @@ def test_review_survives_revision_worker_metadata_and_reload(tmp_path):
         {"tick": 0, "reasons": []},
     ],
 )
-def test_review_api_rejects_invalid_markers(tmp_path, beat):
-    with TestClient(create_app(tmp_path, start_worker=False)) as client:
+def test_review_api_rejects_invalid_markers(
+    tmp_path,
+    beat,
+    authenticated_app,
+    authenticated_client,
+):
+    with authenticated_client(authenticated_app(tmp_path)) as client:
         identifier = client.post("/api/jobs", files={"file": ("song.wav", b"x")}).json()["id"]
         response = client.post(
             f"/api/jobs/{identifier}/score",

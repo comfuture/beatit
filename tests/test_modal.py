@@ -4,10 +4,8 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
-from fastapi.testclient import TestClient
 
 from transcription import execution, modal_credentials, modal_models, modal_worker
-from transcription.app import create_app
 from transcription.colab_artifacts import import_output
 from transcription.modal_config import MANIFEST, MODEL_FINGERPRINT
 
@@ -42,7 +40,9 @@ def test_local_is_the_default_and_invalid_configuration_fails(monkeypatch):
         execution.default_engine()
 
 
-def test_api_uses_remote_tools_without_requiring_local_ffmpeg_or_cuda(tmp_path, monkeypatch):
+def test_api_uses_remote_tools_without_requiring_local_ffmpeg_or_cuda(
+    tmp_path, monkeypatch, authenticated_app, authenticated_client
+):
     monkeypatch.setenv("DRUM_EXECUTION_BACKEND", "modal")
     monkeypatch.setattr(
         "transcription.app.capabilities", lambda: {"ffmpeg": False, "devices": ["cpu"]}
@@ -50,7 +50,7 @@ def test_api_uses_remote_tools_without_requiring_local_ffmpeg_or_cuda(tmp_path, 
     monkeypatch.setattr(
         modal_worker, "runtime_status", lambda: {"state": "idle", "can_allocate": True}
     )
-    with TestClient(create_app(tmp_path, start_worker=False)) as client:
+    with authenticated_client(authenticated_app(tmp_path)) as client:
         system = client.get("/api/system").json()
         assert system["execution_backend"] == "modal"
         assert system["ffmpeg"] and system["devices"] == ["cuda"]
@@ -290,8 +290,7 @@ def test_interrupted_call_is_cancelled_from_persisted_record(tmp_path, monkeypat
     assert not record.exists()
 
 
-def test_failed_cancel_remains_recoverable_after_job_deletion(rpc, monkeypatch):
-    from transcription.store import JobStore
+def test_failed_cancel_remains_recoverable_after_job_deletion(rpc, monkeypatch, authenticated_app):
 
     rpc.inference.result = RuntimeError("Connection lost")
 
@@ -303,8 +302,9 @@ def test_failed_cancel_remains_recoverable_after_job_deletion(rpc, monkeypatch):
         modal_worker.run(rpc.directory)
     record = modal_worker.call_record(rpc.directory)
     assert record.is_file()
-    store = JobStore(rpc.directory.parent)
-    store.add(rpc.directory.name, "input.wav")
+    app = authenticated_app(rpc.directory.parent)
+    store = app.state.store
+    store.add(rpc.directory.name, "input.wav", owner_id=app.state.test_user["id"])
     store.update(rpc.directory.name, "failed")
     store.delete(rpc.directory.name)
     assert not rpc.directory.exists() and record.is_file()
@@ -322,15 +322,18 @@ def test_failed_cancel_remains_recoverable_after_job_deletion(rpc, monkeypatch):
 
 @pytest.mark.parametrize("failure", ["credentials", "network"])
 def test_legacy_record_is_migrated_before_failed_startup_cancellation(
-    tmp_path, monkeypatch, failure
+    tmp_path, monkeypatch, failure, authenticated_app, mysql_database, disk_objects
 ):
     from transcription.store import JobStore
 
     directory = tmp_path / ("c" * 32)
     directory.mkdir()
     (directory / modal_worker.CALL_FILE).write_text('{"call_id":"fc-legacy"}')
-    store = JobStore(tmp_path)
-    store.add(directory.name, "legacy.wav")
+    (directory / "input").write_bytes(b"legacy source")
+    (directory / "request.json").write_text('{"options":{}}')
+    app = authenticated_app(tmp_path)
+    store = app.state.store
+    store.add(directory.name, "legacy.wav", owner_id=app.state.test_user["id"])
     store.update(directory.name, "cancelled")
 
     def fail(*args, **kwargs):
@@ -357,7 +360,7 @@ def test_legacy_record_is_migrated_before_failed_startup_cancellation(
         "from_id",
         lambda call_id: SimpleNamespace(cancel=lambda **kwargs: recovered.append(call_id)),
     )
-    restarted = JobStore(tmp_path)
+    restarted = JobStore(tmp_path, db=mysql_database, objects=disk_objects)
     restarted.start()
     restarted.stop()
     assert recovered == ["fc-legacy"]
@@ -379,3 +382,124 @@ def test_modal_import_keeps_validation_and_marks_actual_engine(tmp_path):
     result = import_output(archive, tmp_path, {"gpu": "T4"}, backend="modal")
     assert result["execution_backend"] == "modal"
     assert json.loads((tmp_path / "analysis.json").read_text())["execution_backend"] == "modal"
+
+
+def leased_modal_job(store, owner_id):
+    from uuid import uuid4
+
+    identifier = uuid4().hex
+    directory = store.directory(identifier)
+    directory.mkdir()
+    (directory / "input").write_bytes(b"audio")
+    (directory / "request.json").write_text('{"options":{}}')
+    store.add(identifier, "source.wav", owner_id=owner_id)
+    return store.claim()
+
+
+def test_remote_call_record_survives_empty_scratch_and_deleted_job(
+    tmp_path, monkeypatch, authenticated_app, mysql_database
+):
+    import shutil
+    import time
+
+    app = authenticated_app(tmp_path / "scratch")
+    store = app.state.store
+    claim = leased_modal_job(store, app.state.test_user["id"])
+    attempt = store.root / ".attempts" / claim["id"] / claim["claim_token"]
+    attempt.mkdir(parents=True)
+    monkeypatch.setenv("BEATIT_DATABASE_URL", mysql_database.url)
+    monkeypatch.setenv("BEATIT_JOB_ID", claim["id"])
+    monkeypatch.setenv("BEATIT_CLAIM_TOKEN", claim["claim_token"])
+    modal_worker.save_call(attempt, SimpleNamespace(object_id="fc-durable"))
+    monkeypatch.delenv("BEATIT_JOB_ID")
+    monkeypatch.delenv("BEATIT_CLAIM_TOKEN")
+    shutil.rmtree(store.root)
+    store.delete(claim["id"], owner_id=app.state.test_user["id"])
+    recovered = []
+    monkeypatch.setattr(modal_worker, "load_credentials", lambda: None)
+    monkeypatch.setattr(
+        modal_worker.modal.FunctionCall,
+        "from_id",
+        lambda call_id: SimpleNamespace(cancel=lambda **kwargs: recovered.append(call_id)),
+    )
+    assert store.claim() is None  # Another API instance cannot take a live slot.
+    with store.connect() as connection:
+        connection.execute(
+            "UPDATE beatit.worker_slot SET lease_until=%s WHERE id=1", (time.time() - 1,)
+        )
+    assert store.claim() is None  # Cancellation succeeds even though the job row is gone.
+    assert recovered == ["fc-durable"]
+    with store.connect() as connection:
+        assert (
+            connection.execute("SELECT count(*) AS n FROM beatit.remote_calls").fetchone()["n"] == 0
+        )
+
+
+def test_second_api_start_does_not_cancel_another_live_remote_claim(
+    tmp_path, monkeypatch, authenticated_app, mysql_database, disk_objects
+):
+    from transcription.store import JobStore
+
+    app = authenticated_app(tmp_path / "first")
+    store = app.state.store
+    claim = leased_modal_job(store, app.state.test_user["id"])
+    with store.connect() as connection:
+        connection.execute(
+            "INSERT INTO beatit.remote_calls VALUES ('fc-active',%s,%s,1)",
+            (claim["id"], claim["claim_token"]),
+        )
+    calls = []
+    monkeypatch.setattr(modal_worker, "load_credentials", lambda: None)
+    monkeypatch.setattr(
+        modal_worker.modal.FunctionCall,
+        "from_id",
+        lambda call_id: SimpleNamespace(cancel=lambda **kwargs: calls.append(call_id)),
+    )
+    second = JobStore(tmp_path / "second", db=mysql_database, objects=disk_objects)
+    second.start()
+    second.stop()
+    assert calls == []
+    with store.connect() as connection:
+        assert (
+            connection.execute("SELECT count(*) AS n FROM beatit.remote_calls").fetchone()["n"] == 1
+        )
+
+
+def test_remote_cancellation_failure_keeps_global_slot_reserved(
+    tmp_path, monkeypatch, authenticated_app
+):
+    import time
+
+    app = authenticated_app(tmp_path)
+    store = app.state.store
+    claim = leased_modal_job(store, app.state.test_user["id"])
+    with store.connect() as connection:
+        connection.execute(
+            "INSERT INTO beatit.remote_calls VALUES ('fc-offline',%s,%s,1)",
+            (claim["id"], claim["claim_token"]),
+        )
+        connection.execute(
+            "UPDATE beatit.worker_slot SET lease_until=%s WHERE id=1", (time.time() - 1,)
+        )
+    monkeypatch.setattr(modal_worker, "load_credentials", lambda: None)
+
+    def unavailable(**kwargs):
+        raise ConnectionError("Modal cancellation offline")
+
+    monkeypatch.setattr(
+        modal_worker.modal.FunctionCall,
+        "from_id",
+        lambda call_id: SimpleNamespace(cancel=unavailable),
+    )
+    with pytest.raises(ConnectionError, match="offline"):
+        store.claim()
+    with store.connect() as connection:
+        assert (
+            connection.execute("SELECT token FROM beatit.worker_slot WHERE id=1").fetchone()[
+                "token"
+            ]
+            == claim["claim_token"]
+        )
+        assert (
+            connection.execute("SELECT count(*) AS n FROM beatit.remote_calls").fetchone()["n"] == 1
+        )

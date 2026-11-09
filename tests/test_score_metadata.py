@@ -3,10 +3,8 @@ import zipfile
 from xml.etree import ElementTree as ET
 
 import pytest
-from fastapi.testclient import TestClient
 
 from transcription import pipeline
-from transcription.app import create_app
 from transcription.models import Options, ScoreMetadata
 from transcription.score import quantize, update_musicxml_metadata, write_musicxml
 
@@ -115,9 +113,14 @@ def test_failed_metadata_render_keeps_published_result_then_can_retry(tmp_path, 
     assert "New" in svg and "Automatic drum transcription" not in svg
 
 
-def test_metadata_api_validates_queues_and_retains_saved_heading_on_rhythm_edits(tmp_path):
-    app = create_app(tmp_path, start_worker=False)
-    with TestClient(app) as client:
+@pytest.mark.mysql
+def test_metadata_api_validates_queues_and_retains_saved_heading_on_rhythm_edits(
+    tmp_path,
+    authenticated_app,
+    authenticated_client,
+):
+    app = authenticated_app(tmp_path)
+    with authenticated_client(app) as client:
         job = client.post("/api/jobs", files={"file": ("session.wav", b"audio")}).json()
         identifier = job["id"]
         url = f"/api/jobs/{identifier}/score-metadata"

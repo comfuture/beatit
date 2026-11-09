@@ -24,6 +24,7 @@ REMOTE = "/content/beatit"
 class Submission(BaseModel):
     model_config = ConfigDict(extra="forbid")
     attempt: str = Field(pattern=r"^[0-9a-f]{32}$")
+    work_token: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
 
 
 class Attachment(BaseModel):
@@ -234,12 +235,25 @@ class Controller:
             result.update(status="failed", cleanup_pending=True)
         return result
 
-    def submit(self, job: str, attempt: str):
-        if not valid_identifier(job) or not valid_identifier(attempt):
-            raise ValueError("Invalid job identifier")
-        directory = self.data / job
-        if directory.is_symlink() or not directory.is_dir():
-            raise ValueError("Job directory does not exist")
+    def _work_directory(self, job: str, work_token: str | None = None):
+        if not valid_identifier(job) or (
+            work_token is not None and not valid_identifier(work_token)
+        ):
+            raise ValueError("Invalid job identifier or work token")
+        parts = (".attempts", job, work_token) if work_token is not None else (job,)
+        directory = self.data
+        for part in parts:
+            directory = directory / part
+            if directory.is_symlink() or not directory.is_dir():
+                raise ValueError("Job work directory does not exist or contains a symlink")
+        if not directory.resolve().is_relative_to(self.data):
+            raise ValueError("Job work directory is outside the shared data root")
+        return directory
+
+    def submit(self, job: str, attempt: str, work_token: str | None = None):
+        if not valid_identifier(attempt):
+            raise ValueError("Invalid attempt identifier")
+        directory = self._work_directory(job, work_token)
         input_path = directory / "input"
         if input_path.is_symlink() or not input_path.is_file():
             raise ValueError("Job input does not exist")
@@ -248,7 +262,10 @@ class Controller:
         request = directory / "request.json"
         if request.is_symlink() or not request.is_file() or request.stat().st_size > 32 * 1024**2:
             raise ValueError("Invalid job request")
-        fingerprint = hashlib.sha256(request.read_bytes()).hexdigest()
+        fingerprint_data = request.read_bytes()
+        if work_token is not None:
+            fingerprint_data += b"\0work-token:" + work_token.encode("ascii")
+        fingerprint = hashlib.sha256(fingerprint_data).hexdigest()
         with self.lock, self.connect() as connection:
             existing = connection.execute(
                 "SELECT job, request_hash, status, error FROM attempts WHERE attempt=?", (attempt,)
@@ -280,7 +297,7 @@ class Controller:
             self.cancelled.clear()
             self.last_activity = time.time()
             self.job_thread = threading.Thread(
-                target=self._run, args=(job, attempt), daemon=True, name="colab-job"
+                target=self._run, args=(job, attempt, work_token), daemon=True, name="colab-job"
             )
             self.job_thread.start()
         return {"status": "running", "error": None}
@@ -395,8 +412,8 @@ class Controller:
         self.prepared_runtime = self.runtime_id
         return False
 
-    def _run(self, job: str, attempt: str):
-        directory = self.data / job
+    def _run(self, job: str, attempt: str, work_token: str | None = None):
+        directory = self.data / ".attempts" / job / work_token if work_token else self.data / job
         remote = REMOTE + "/jobs/" + job + "/" + attempt
         started = time.monotonic()
         launched = False
@@ -439,6 +456,8 @@ class Controller:
                     connection.execute(
                         "UPDATE attempts SET runtime=? WHERE attempt=?", (runtime, attempt)
                     )
+                # Recheck the exact submitted path before consuming shared files.
+                directory = self._work_directory(job, work_token)
                 with tempfile.TemporaryDirectory(dir=self.state) as scratch:
                     packed = Path(scratch) / "input.zip"
                     pack_input(directory, packed)
@@ -496,6 +515,7 @@ class Controller:
                     self._progress(
                         directory, "publishing", 0.98, "악보와 오디오를 저장합니다.", started
                     )
+                    directory = self._work_directory(job, work_token)
                     result = import_output(
                         archive,
                         directory,
@@ -627,7 +647,7 @@ def create_controller(controller: Controller, token: str) -> FastAPI:
     @app.post("/v1/jobs/{job}", status_code=202)
     def submit(job: str, submission: Submission):
         try:
-            return controller.submit(job, submission.attempt)
+            return controller.submit(job, submission.attempt, submission.work_token)
         except ColabUnavailable as error:
             raise HTTPException(503, str(error)) from None
         except ValueError as error:
