@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { mockWorkspaceEvents } from "./workspaceEvents";
 
-for (const mode of ["chunked", "direct"] as const) {
-test(`a large video uses ${mode} transport, recovers an acknowledgement and shows publication progress`, async ({ page }) => {
+for (const transport of ["chunked", "direct", "direct with a proxy 413 fallback"] as const) {
+test(`a large video uses ${transport} transport, recovers an acknowledgement and shows publication progress`, async ({ page }) => {
+  const mode = transport === "chunked" ? "chunked" : "direct";
+  const proxyRejects = transport === "direct with a proxy 413 fallback";
   const id = "b".repeat(32);
   const chunkSize = 8 * 1024 ** 2;
   const source = Buffer.alloc(chunkSize + 7, 31);
@@ -11,6 +13,7 @@ test(`a large video uses ${mode} transport, recovers an acknowledgement and show
   let published = false;
   let completes = 0;
   const received: Buffer[] = [];
+  const requests: { method: string; path: string }[] = [];
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const job = {
@@ -27,6 +30,7 @@ test(`a large video uses ${mode} transport, recovers an acknowledgement and show
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     const method = route.request().method();
+    requests.push({ method, path });
     if (path === "/api/auth/me") return route.fulfill({ json: { user: { id: "upload-user", name: "Upload User", email: "upload@example.test" } } });
     if (path === "/api/system") return route.fulfill({ json: {
       ffmpeg: true, verovio: true, musescore: false, devices: ["cpu"], default_device: "cpu",
@@ -46,6 +50,7 @@ test(`a large video uses ${mode} transport, recovers an acknowledgement and show
     if (path === `/api/uploads/${id}` && method === "PUT") {
       const data = route.request().postDataBuffer()!;
       expect(data.equals(source)).toBe(true);
+      if (proxyRejects) return route.fulfill({ status: 413, body: "<html>Request Entity Too Large</html>" });
       received.push(data);
       offset = data.length;
       return route.fulfill({ status: 503, body: "upstream disconnected after upload" });
@@ -76,7 +81,10 @@ test(`a large video uses ${mode} transport, recovers an acknowledgement and show
   await expect(page.getByText("파일 저장 중", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "업로드 취소", exact: true })).toHaveCount(0);
   expect(Buffer.concat(received).equals(source)).toBe(true);
-  expect(received).toHaveLength(mode === "direct" ? 1 : 2);
+  expect(received).toHaveLength(mode === "direct" && !proxyRejects ? 1 : 2);
+  expect(requests.filter((request) => request.method === "PUT")).toHaveLength(mode === "direct" ? 1 : 0);
+  expect(requests.filter((request) => request.method === "POST" && request.path === "/api/uploads")).toHaveLength(1);
+  expect(requests.filter((request) => request.method === "POST" && request.path === "/api/jobs")).toHaveLength(0);
   expect(completes).toBe(1);
   published = true;
   await expect(page).toHaveURL(new RegExp(`/sessions/${id}$`));

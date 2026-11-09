@@ -118,9 +118,13 @@ export async function uploadMedia(file: File, options: Options, settings: Upload
           { "Content-Type": "application/octet-stream" },
           (bytes) => onProgress(Math.min(99, Math.floor(bytes / file.size * 100))), 30 * 60 * 1000);
       } catch (error) {
-        if (signal.aborted || !retryable(error)) throw error;
+        const sizeRejected = statusOf(error) === 413;
+        if (signal.aborted || (!sizeRejected && !retryable(error))) throw error;
         const status = await request<UploadSession>("GET", path, signal);
         if (status.offset === file.size) return status;
+        // A browser can retain its former proxy connection after a DNS cutover.
+        // Reuse the verified session and bounded chunks if that proxy rejects PUT.
+        if (sizeRejected && status.state === "uploading") return status;
         throw error;
       }
     }, signal);

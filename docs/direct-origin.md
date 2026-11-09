@@ -84,8 +84,10 @@ reservation, and streams into private staging without a second full-sized copy.
 An incomplete PUT rolls back to offset zero; a lost acknowledgement is reconciled
 with the session offset. The existing 8 MiB PATCH protocol remains available when
 `BEATIT_UPLOAD_MODE=chunked`. Staging limits, ownership and expiry are unchanged.
-Do not advertise direct mode while requests still traverse Cloudflare's 100 MB
-request limit.
+Enable direct mode after changing DNS. A retained browser proxy connection can
+still reject the whole-body PUT with 413; the client then checks the same session
+and continues with bounded chunks. It accepts an already-full offset without
+resending bytes. The initial application file-size check remains authoritative.
 
 `BEATIT_MEDIA_BASE_URL=/media` retains existing playback URLs. For DNS-only clients,
 the application serves authenticated owner-scoped `/media/{id}/{source}` requests,
