@@ -81,6 +81,35 @@ function server({ loseFirstAck = false, failMiddle = false } = {}) {
 }
 
 describe("bounded, retryable media uploads", () => {
+  it.each([false, true])("reconciles a direct 413 in the same session (body already accepted: %s)", async (accepted) => {
+    const backend = server();
+    const original = respond;
+    respond = (request) => {
+      if (request.method !== "PUT") return original(request);
+      if (accepted) original(request);
+      return { status: 413, text: "<html>Request Entity Too Large</html>" };
+    };
+    const onSession = vi.fn();
+    const upload = uploadMedia(new File(["12345678abcdefghEND"], "song.mp4"), defaultOptions(), {
+      mode: "direct", signal: new AbortController().signal, onSession, onProgress: vi.fn(),
+    });
+    await vi.runAllTimersAsync();
+    expect(await upload).toEqual(backend.job);
+    expect(await new Blob(backend.received).text()).toBe("12345678abcdefghEND");
+    expect(sent.filter((request) => request.method === "PUT")).toHaveLength(1);
+    expect(sent.filter((request) => request.method === "PATCH")).toHaveLength(accepted ? 0 : 3);
+    expect(sent.filter((request) => request.path === "/api/uploads")).toHaveLength(1);
+    expect(sent.filter((request) => request.path.endsWith("/complete"))).toHaveLength(1);
+    expect(onSession).toHaveBeenCalledOnce();
+  });
+  it("keeps session-creation size rejection authoritative in direct mode", async () => {
+    respond = () => ({ status: 413, json: { detail: "File exceeds application size limit" } });
+    await expect(uploadMedia(new File(["audio"], "song.wav"), defaultOptions(), {
+      mode: "direct", signal: new AbortController().signal, onSession: vi.fn(), onProgress: vi.fn(),
+    })).rejects.toMatchObject({ status: 413 });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ method: "POST", path: "/api/uploads" });
+  });
   it("sends direct mode as one whole-file request and reconciles a lost response", async () => {
     const backend = server({ loseFirstAck: true });
     const upload = uploadMedia(new File(["12345678abcdefghEND"], "song.mp4"), defaultOptions(), {
