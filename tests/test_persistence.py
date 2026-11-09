@@ -284,9 +284,47 @@ def test_legacy_import_is_owner_explicit_idempotent_and_rollback_safe(persistenc
     assert store.file_path(identifier, "render-42/score.musicxml").read_text() == "legacy score"
     assert rollback_import(store, "server-backup-2026-11-09", "owner-a") == {"removed": 1}
     assert store.list("owner-a") == []
+    with pytest.raises(KeyError):
+        store.get_project(identifier, "owner-a")
     assert (source / legacy_id / "result.json").is_file()
     assert originals == {
         str(path.relative_to(source)): path.read_bytes()
         for path in source.rglob("*")
         if path.is_file()
     }
+
+
+@pytest.mark.parametrize("attach_after_import_deletion", [False, True])
+def test_import_rollback_preserves_new_jobs_attached_to_imported_project(
+    persistence_store, tmp_path, monkeypatch, attach_after_import_deletion
+):
+    store = persistence_store
+    source = tmp_path / "legacy-backup"
+    make_legacy(source)
+    imported = import_legacy(store, source, "owner-a", "rollback-owned-project")["imported"][0]
+    other_owner = enqueue(store, owner="owner-b")
+    attached = {}
+
+    def attach():
+        identifier = enqueue(store, project_id=imported)
+        attached.update(id=identifier, job=store.get(identifier, owner_id="owner-a"))
+
+    if attach_after_import_deletion:
+        original_delete = store.delete
+
+        def delete_then_upload(identifier, owner_id=None):
+            original_delete(identifier, owner_id)
+            # Reproduce an upload committed between the imported job deletion
+            # and the separate parent-project cleanup transaction.
+            attach()
+
+        monkeypatch.setattr(store, "delete", delete_then_upload)
+    else:
+        attach()
+    assert rollback_import(store, "rollback-owned-project", "owner-a") == {"removed": 1}
+    with pytest.raises(KeyError):
+        store.get(imported, owner_id="owner-a")
+    assert store.get(attached["id"], owner_id="owner-a") == attached["job"]
+    assert store.get_project(imported, "owner-a")["job_count"] == 1
+    assert store.file_path(attached["id"], "input", "owner-a").read_bytes() == b"source audio"
+    assert store.get(other_owner, owner_id="owner-b")["status"] == "queued"

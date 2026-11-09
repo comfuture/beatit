@@ -148,7 +148,22 @@ def rollback_import(store: JobStore, source_name: str, owner_id: str):
     for row in imports:
         store.delete(row["job_id"], owner_id=owner_id)
         with store.connect() as connection:
-            connection.execute(
-                "DELETE FROM beatit.projects WHERE id=%s AND owner_id=%s", (row["job_id"], owner_id)
-            )
+            # Upload admission takes this same parent lock before attaching a
+            # job. Check emptiness after acquiring it so a concurrent upload
+            # cannot be erased by the project's ON DELETE CASCADE.
+            project = connection.execute(
+                "SELECT id FROM beatit.projects WHERE id=%s AND owner_id=%s FOR UPDATE",
+                (row["job_id"], owner_id),
+            ).fetchone()
+            if (
+                project
+                and not connection.execute(
+                    "SELECT 1 FROM beatit.jobs WHERE project_id=%s LIMIT 1 FOR UPDATE",
+                    (project["id"],),
+                ).fetchone()
+            ):
+                connection.execute(
+                    "DELETE FROM beatit.projects WHERE id=%s AND owner_id=%s",
+                    (project["id"], owner_id),
+                )
     return {"removed": len(imports)}
