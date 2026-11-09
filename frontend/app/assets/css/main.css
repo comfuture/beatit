@@ -1402,12 +1402,39 @@ a:focus-visible,
   align-items: center;
   gap: 9px;
 }
+.status-bar > div:first-child {
+  min-width: 0;
+}
+.status-bar > div:first-child > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .status-bar > div:last-child {
   gap: 20px;
+  flex-shrink: 0;
 }
 .status-bar > div:last-child > span:last-child {
   font-size: 8px;
   letter-spacing: 1.2px;
+}
+.credits-trigger {
+  min-width: 44px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: var(--ui-text-muted);
+  font-size: 10px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.credits-trigger:hover {
+  color: var(--ui-text-highlighted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.credits-trigger:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: 1px;
 }
 .help-content {
   font-size: 13px;
@@ -1491,6 +1518,9 @@ a:focus-visible,
   }
   .status-bar > div:last-child > span:last-child {
     display: none;
+  }
+  .status-bar > div:last-child {
+    gap: 9px;
   }
   .panel-toolbar {
     padding: 0 12px;
