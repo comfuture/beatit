@@ -2,7 +2,7 @@
 import type { ScoreMetadata } from "~/types/studio";
 
 const metadata = defineModel<ScoreMetadata>({ required: true });
-defineProps<{ disabled: boolean; dirty: boolean }>();
+defineProps<{ disabled: boolean; dirty: boolean; applyDisabled?: boolean }>();
 defineEmits<{ apply: [] }>();
 </script>
 
@@ -32,7 +32,7 @@ defineEmits<{ apply: [] }>();
       label="적용"
       icon="i-lucide-check"
       size="xs"
-      :disabled="disabled || !dirty"
+      :disabled="disabled || applyDisabled || !dirty"
     />
   </form>
 </template>

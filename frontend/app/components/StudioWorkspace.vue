@@ -10,12 +10,16 @@ const studio = useStudio(props.user.id, () => emit("unauthorized"));
 const {
   jobs,
   current,
+  pendingRemoteJob,
   system,
   selectedFile,
   options,
   revision,
   metadata,
   metadataDirty,
+  alignmentDirty,
+  savedOffset,
+  firstHit,
   events,
   beatReview,
   error,
@@ -437,6 +441,7 @@ onBeforeUnmount(() => {
                 trailing-icon="i-lucide-chevron-down"
                 color="neutral"
                 variant="outline"
+                :disabled="!!pendingRemoteJob"
             /></UDropdownMenu>
           </div>
         </header>
@@ -447,6 +452,16 @@ onBeforeUnmount(() => {
           variant="soft"
           icon="i-lucide-circle-alert"
           :close="{ onClick: () => (error = '') }"
+          class="app-alert"
+        />
+        <UAlert
+          v-if="pendingRemoteJob"
+          title="새 악보가 도착했습니다"
+          description="현재 위치·타격·악보 정보 초안을 보존했습니다. 새 악보를 불러오면 초안을 버립니다."
+          color="warning"
+          variant="soft"
+          icon="i-lucide-circle-alert"
+          :actions="[{ label: '새 악보 불러오기', color: 'warning', variant: 'outline', onClick: () => openJob(pendingRemoteJob!.id) }]"
           class="app-alert"
         />
         <div class="workspace-container">
@@ -535,7 +550,7 @@ onBeforeUnmount(() => {
                             icon="i-lucide-check"
                             size="xs"
                             :loading="busy"
-                            :disabled="busy || loadingEvents || !dirty"
+                            :disabled="busy || loadingEvents || !dirty || !!pendingRemoteJob"
                             @click="studio.save"
                           />
                         </div>
@@ -654,6 +669,7 @@ onBeforeUnmount(() => {
                       v-model="metadata"
                       :dirty="metadataDirty"
                       :disabled="busy || loadingEvents"
+                      :apply-disabled="!!pendingRemoteJob"
                       @apply="studio.applyMetadata"
                     />
                     <USeparator class="my-5" />
@@ -663,7 +679,12 @@ onBeforeUnmount(() => {
                     v-model="revision"
                     :system="system"
                     revision
-                    :disabled="busy"
+                    :disabled="busy || loadingEvents"
+                    :saved-offset="savedOffset"
+                    :first-hit="firstHit"
+                    :alignment-changed="alignmentDirty"
+                    @shift-alignment="studio.shiftAlignment"
+                    @reset-alignment="studio.resetAlignment"
                   /><SessionOptions
                     v-else
                     v-model="options"
@@ -821,6 +842,7 @@ onBeforeUnmount(() => {
             v-model="metadata"
             :dirty="metadataDirty"
             :disabled="busy || loadingEvents"
+            :apply-disabled="!!pendingRemoteJob"
             @apply="studio.applyMetadata"
           />
           <USeparator class="my-5" />
@@ -829,7 +851,12 @@ onBeforeUnmount(() => {
           v-model="revision"
           :system="system"
           revision
-          :disabled="busy" /><SessionOptions
+          :disabled="busy || loadingEvents"
+          :saved-offset="savedOffset"
+          :first-hit="firstHit"
+          :alignment-changed="alignmentDirty"
+          @shift-alignment="studio.shiftAlignment"
+          @reset-alignment="studio.resetAlignment" /><SessionOptions
           v-else
           v-model="options"
           :system="system"
@@ -875,7 +902,7 @@ onBeforeUnmount(() => {
         ><UButton
           v-if="result"
           label="악보 재생성"
-          :disabled="busy || !dirty || loadingEvents"
+          :disabled="busy || !dirty || loadingEvents || !!pendingRemoteJob"
           :loading="busy"
           block
           @click="

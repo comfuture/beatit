@@ -83,7 +83,7 @@ export interface Job {
     elapsed_seconds?: number;
   };
   result?: Result;
-  request?: { options: Options };
+  request?: { options: Options; client_edit_id?: string | null };
 }
 export interface SystemInfo {
   media_base_url?: string;

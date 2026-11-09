@@ -5,7 +5,11 @@ defineProps<{
   system: SystemInfo | null;
   revision?: boolean;
   disabled?: boolean;
+  savedOffset?: number | null;
+  firstHit?: number | null;
+  alignmentChanged?: boolean;
 }>();
+defineEmits<{ shiftAlignment: [beats: number]; resetAlignment: [] }>();
 function numberValue(value: string | number): number | null {
   return value === "" ? null : Number(value);
 }
@@ -52,7 +56,31 @@ function numberValue(value: string | number): number | null {
         class="w-full"
       />
     </UFormField>
-    <UFormField label="첫 마디 시작" hint="초">
+    <template v-if="revision">
+      <FirstBarAlignment
+        :options="model"
+        :saved-offset="savedOffset ?? null"
+        :first-hit="firstHit ?? null"
+        :pending="alignmentChanged"
+        :disabled="disabled"
+        @shift="$emit('shiftAlignment', $event)"
+        @reset="$emit('resetAlignment')"
+      />
+      <UCollapsible>
+        <UButton label="초 단위 위치" trailing-icon="i-lucide-chevron-down" color="neutral" variant="ghost" size="xs" block class="justify-between" />
+        <template #content>
+          <UFormField label="첫 마디 시작" hint="초" class="pt-2">
+            <UInput
+              :model-value="model.offset === null ? '' : String(model.offset)"
+              type="number" :min="-10" :max="120" :step="0.0001"
+              placeholder="자동 감지" aria-label="첫 마디 시작" class="w-full"
+              @update:model-value="model.offset = numberValue($event)"
+            />
+          </UFormField>
+        </template>
+      </UCollapsible>
+    </template>
+    <UFormField v-else label="첫 마디 시작" hint="초">
       <UInput
         :model-value="model.offset === null ? '' : String(model.offset)"
         type="number"
