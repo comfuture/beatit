@@ -1,14 +1,26 @@
+import asyncio
+import logging
 import os
 import re
 import shutil
 import tempfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from uuid import uuid4
 
 from boto3.exceptions import Boto3Error
 from botocore.exceptions import BotoCoreError, ClientError
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -19,6 +31,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .access_log import install_auth_query_redaction
 from .auth import install_auth, require_user
+from .chunk_uploads import CHUNK_BYTES, ChunkUploads
 from .execution import default_engine, execution_capabilities
 from .models import Options, Revision, ScoreMetadata
 from .pipeline import MAX_DURATION, save_json
@@ -67,6 +80,13 @@ class ProjectInput(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
+class UploadInput(BaseModel):
+    filename: str = Field(min_length=1, max_length=1000)
+    size: int = Field(gt=0, strict=True)
+    options: Options = Field(default_factory=Options)
+    project_id: str | None = None
+
+
 def create_app(
     data_root: Path | None = None, start_worker: bool = True, *, store=None, auth_service=None
 ) -> FastAPI:
@@ -75,14 +95,27 @@ def create_app(
     if media_base_url not in {"", "/media"}:
         raise RuntimeError("BEATIT_MEDIA_BASE_URL must be empty or /media.")
     store = store or JobStore(data_root or Path(os.environ.get("DRUM_DATA_DIR", "data")))
+    uploads = ChunkUploads(store)
+
+    async def clean_uploads():
+        while True:
+            try:
+                await run_in_threadpool(uploads.cleanup)
+            except Exception:
+                logging.exception("Expired upload cleanup will be retried")
+            await asyncio.sleep(60)
 
     @asynccontextmanager
     async def lifespan(app):
         if start_worker:
             store.start()
+        cleaner = asyncio.create_task(clean_uploads())
         try:
             yield
         finally:
+            cleaner.cancel()
+            with suppress(asyncio.CancelledError):
+                await cleaner
             if start_worker:
                 store.stop()
             store.close()
@@ -153,6 +186,7 @@ def create_app(
         return {
             **execution_capabilities(capabilities()),
             "max_upload_bytes": upload_limit(),
+            "upload_chunk_bytes": CHUNK_BYTES,
             "max_duration_seconds": MAX_DURATION,
             "media_base_url": media_base_url,
         }
@@ -181,6 +215,64 @@ def create_app(
     def project(identifier: str, user: dict = Depends(require_user)):
         return get_project(identifier, user)
 
+    def validate_upload(filename, parsed):
+        filename = filename.replace("\\", "/").rsplit("/", 1)[-1][:200]
+        if Path(filename).suffix.lower() not in EXTENSIONS:
+            raise HTTPException(
+                415, "지원하지 않는 파일 형식입니다. 오디오 또는 비디오 파일을 선택하세요."
+            )
+        engine = default_engine()
+        if engine in {"colab", "modal"} and parsed.device not in {"auto", "cuda"}:
+            raise HTTPException(422, "원격 분석은 자동 선택 또는 CUDA 장치를 사용하세요.")
+        if engine in {"colab", "modal"} and parsed.renderer == "musescore":
+            raise HTTPException(422, "원격 분석은 자동 선택 또는 Verovio 렌더러를 사용하세요.")
+        return filename
+
+    @app.post("/api/uploads", status_code=201)
+    def create_upload(payload: UploadInput, user: dict = Depends(require_user)):
+        filename = validate_upload(payload.filename, payload.options)
+        if payload.size > upload_limit():
+            raise HTTPException(413, "파일 크기 제한을 초과했습니다.")
+        if payload.project_id:
+            get_project(payload.project_id, user)
+        return uploads.create(
+            user["id"], filename, payload.size, payload.options.model_dump(), payload.project_id
+        )
+
+    @app.get("/api/uploads/{identifier}")
+    def upload_status(
+        identifier: str, background: BackgroundTasks, user: dict = Depends(require_user)
+    ):
+        metadata = uploads.status(user["id"], identifier)
+        if metadata["state"] == "finalizing":
+            # A restart during object publication resumes on the next status read.
+            background.add_task(uploads.finish, user["id"], identifier)
+        return metadata
+
+    @app.patch("/api/uploads/{identifier}")
+    async def upload_chunk(
+        identifier: str,
+        request: Request,
+        upload_offset: int = Header(ge=0),
+        user: dict = Depends(require_user),
+    ):
+        if upload_offset % CHUNK_BYTES:
+            raise HTTPException(409, "업로드 조각의 시작 위치가 올바르지 않습니다.")
+        return await uploads.receive(user["id"], identifier, upload_offset, request)
+
+    @app.post("/api/uploads/{identifier}/complete", status_code=202)
+    def complete_upload(
+        identifier: str, background: BackgroundTasks, user: dict = Depends(require_user)
+    ):
+        metadata = uploads.prepare_finish(user["id"], identifier)
+        if metadata["state"] == "finalizing":
+            background.add_task(uploads.finish, user["id"], identifier)
+        return metadata
+
+    @app.delete("/api/uploads/{identifier}", status_code=204)
+    def cancel_upload(identifier: str, user: dict = Depends(require_user)):
+        uploads.cancel(user["id"], identifier)
+
     @app.post("/api/jobs", status_code=202)
     async def upload(
         file: UploadFile = File(...),
@@ -190,11 +282,6 @@ def create_app(
     ):
         if project_id:
             await run_in_threadpool(get_project, project_id, user)
-        filename = (file.filename or "media").replace("\\", "/").rsplit("/", 1)[-1][:200]
-        if Path(filename).suffix.lower() not in EXTENSIONS:
-            raise HTTPException(
-                415, "지원하지 않는 파일 형식입니다. 오디오 또는 비디오 파일을 선택하세요."
-            )
         try:
             parsed = Options.model_validate_json(options)
         except ValidationError as error:
@@ -205,14 +292,7 @@ def create_app(
                     for item in error.errors()
                 ],
             ) from None
-        engine = default_engine()
-        if engine in {"colab", "modal"} and parsed.device not in {
-            "auto",
-            "cuda",
-        }:
-            raise HTTPException(422, "원격 분석은 자동 선택 또는 CUDA 장치를 사용하세요.")
-        if engine in {"colab", "modal"} and parsed.renderer == "musescore":
-            raise HTTPException(422, "원격 분석은 자동 선택 또는 Verovio 렌더러를 사용하세요.")
+        filename = validate_upload(file.filename or "media", parsed)
         identifier = uuid4().hex
         directory = store.directory(identifier)
         directory.mkdir()

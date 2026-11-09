@@ -100,6 +100,15 @@ function select(event: Event) {
         size="lg"
         @click="$emit('upload')"
       />
+      <UButton
+        v-if="uploading && uploadProgress < 100"
+        label="업로드 취소"
+        variant="ghost"
+        color="neutral"
+        size="sm"
+        block
+        @click="$emit('cancel')"
+      />
       <p v-if="remoteExecution" class="source-notes" role="status">
         <UIcon name="i-lucide-cloud" />{{ runtimeStatus(system) }}
       </p>

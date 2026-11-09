@@ -41,6 +41,37 @@ omitted in this configuration. The Mac's measured connection uses SSH TCP
 forwarding through chunsik on local port 13306. A database-specific Cloudflare
 Access hostname was not verified; the application HTTPS tunnel is a separate path.
 
+## Large browser uploads
+
+The domain's Cloudflare upload limit is 100 MB per request. The application can
+still accept media up to its advertised 1 GiB total limit: files larger than
+8 MiB use authenticated, sequential 8 MiB requests through the existing hostname
+to chunsik. Small files retain the single-request API. No new upload domain,
+public origin port, Cloudflare plan change, or R2 browser credentials are needed.
+
+`POST /api/uploads` creates an owner-scoped session; `PATCH /api/uploads/{id}`
+accepts one raw chunk with an `Upload-Offset` header. Acknowledged bytes are
+recorded atomically, repeated chunks must match the stored bytes, and an
+interrupted append is truncated to its last committed offset before retry.
+`POST /api/uploads/{id}/complete` returns immediately while the existing MySQL/R2
+publication runs in the background. The browser polls the session and opens the
+job only after publication succeeds. A status read resumes interrupted
+publication after an application process restart, without creating a second job.
+
+Staging is transient and private under `/app/data/.uploads`. It survives a
+container restart when the existing data volume is retained; replacing the data
+volume or reloading the page requires selecting/uploading the file again.
+Completed jobs remain durable in MySQL/R2. Abandoned sessions expire after 24 hours
+and are collected every minute. There are at most three unfinished uploads per
+owner and eight globally, with free-space reservations before accepting more.
+
+The browser retries recoverable chunk failures up to three attempts, checks the
+server offset after an uncertain response, and retains its session for a manual
+retry while the page remains open. A request ends after 30 seconds without
+progress or 120 seconds total; publication polling is bounded to 15 minutes.
+Upload cancellation is available during transfer, and the UI distinguishes
+`파일 저장 중` from byte transfer and analysis.
+
 ## Operate the correct Compose project
 
 Use the explicit project, environment file and MySQL TLS overlay so commands do

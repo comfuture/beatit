@@ -14,7 +14,7 @@ def shell_client(tmp_path, monkeypatch):
     web.mkdir()
     (web / "index.html").write_text("<!doctype html><title>Beatit shell</title>")
     monkeypatch.setattr(application, "STATIC", web)
-    store = SimpleNamespace(db=None, close=lambda: None)
+    store = SimpleNamespace(root=tmp_path / "data", db=None, close=lambda: None)
     with TestClient(application.create_app(start_worker=False, store=store)) as client:
         yield client
 

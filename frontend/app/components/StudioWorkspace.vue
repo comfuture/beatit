@@ -636,7 +636,7 @@ onBeforeUnmount(() => {
                 @choose="studio.chooseFile"
                 @clear="selectedFile = null"
                 @upload="studio.upload"
-                @cancel="studio.action('cancel')"
+                @cancel="studio.cancelUpload"
                 @retry="studio.action('retry')"
                 @error="error = $event"
               />

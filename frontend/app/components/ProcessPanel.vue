@@ -106,7 +106,7 @@ const percent = computed(() =>
     <div class="process-caption">
       <span>{{
         uploading
-          ? "파일 전송 중"
+          ? uploadProgress === 100 ? "파일 저장 중" : "파일 전송 중"
           : job?.status === "cancelled"
             ? "분석이 취소되었습니다"
             : job?.progress.message || "소스 파일을 기다리고 있습니다"
