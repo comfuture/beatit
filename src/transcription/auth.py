@@ -36,7 +36,10 @@ DISCOVERY = "https://accounts.google.com/.well-known/openid-configuration"
 ISSUERS = {"https://accounts.google.com", "accounts.google.com"}
 STATE_SECONDS = 600
 SESSION_SECONDS = 7 * 24 * 60 * 60
+SESSION_REFRESH_SECONDS = 24 * 60 * 60
+SESSION_ABSOLUTE_SECONDS = 30 * 24 * 60 * 60
 _jwt = JsonWebToken(["RS256"])
+_UNCHECKED = object()
 
 
 def login_return_path(value: str) -> str:
@@ -294,19 +297,25 @@ class AuthService:
                 "SELECT id,email,name,picture FROM beatit.users WHERE google_sub=%s",
                 (claims["sub"],),
             ).fetchone()
-            connection.execute("DELETE FROM beatit.sessions WHERE expires <= UTC_TIMESTAMP(6)")
+            connection.execute(
+                "DELETE FROM beatit.sessions WHERE expires <= UTC_TIMESTAMP(6) "
+                "OR COALESCE(absolute_expires, DATE_ADD(created, INTERVAL 30 DAY)) "
+                "<= UTC_TIMESTAMP(6)"
+            )
             if previous_token:
                 connection.execute(
                     "DELETE FROM beatit.sessions WHERE token_hash=%s", (token_hash(previous_token),)
                 )
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             connection.execute(
-                "INSERT INTO beatit.sessions (token_hash,user_id,expires) VALUES (%s,%s,%s)",
+                "INSERT INTO beatit.sessions "
+                "(token_hash,user_id,expires,created,absolute_expires) VALUES (%s,%s,%s,%s,%s)",
                 (
                     token_hash(token),
                     user["id"],
-                    (datetime.now(timezone.utc) + timedelta(seconds=SESSION_SECONDS)).replace(
-                        tzinfo=None
-                    ),
+                    now + timedelta(seconds=SESSION_SECONDS),
+                    now,
+                    now + timedelta(seconds=SESSION_ABSOLUTE_SECONDS),
                 ),
             )
         return token, dict(user)
@@ -373,15 +382,7 @@ class AuthService:
             self.create_session, claims, request.cookies.get(self.settings.cookie_name)
         )
         response = RedirectResponse(self.settings.public_url + return_path, status_code=303)
-        response.set_cookie(
-            self.settings.cookie_name,
-            token,
-            max_age=SESSION_SECONDS,
-            secure=self.settings.secure,
-            httponly=True,
-            samesite="lax",
-            path="/",
-        )
+        self.set_session_cookie(response, token, SESSION_SECONDS)
         response.delete_cookie(
             self.settings.state_cookie_name,
             path="/",
@@ -393,18 +394,77 @@ class AuthService:
         response.headers["Referrer-Policy"] = "no-referrer"
         return response
 
-    def current_user(self, request: Request):
+    def _session(self, request: Request):
         token = request.cookies.get(self.settings.cookie_name, "")
         if not token or len(token) > 256:
             return None
         with self.db.connection() as connection:
-            row = connection.execute(
-                "SELECT u.id,u.email,u.name,u.picture FROM beatit.sessions s "
+            return connection.execute(
+                "SELECT u.id,u.email,u.name,u.picture,s.expires,"
+                "COALESCE(s.absolute_expires, DATE_ADD(s.created, INTERVAL 30 DAY)) "
+                "AS absolute_expires, UTC_TIMESTAMP(6) AS checked_at "
+                "FROM beatit.sessions s "
                 "JOIN beatit.users u ON u.id=s.user_id "
-                "WHERE s.token_hash=%s AND s.expires>UTC_TIMESTAMP(6)",
+                "WHERE s.token_hash=%s AND s.expires>UTC_TIMESTAMP(6) "
+                "AND COALESCE(s.absolute_expires, DATE_ADD(s.created, INTERVAL 30 DAY)) "
+                ">UTC_TIMESTAMP(6)",
                 (token_hash(token),),
             ).fetchone()
-        return dict(row) if row else None
+
+    @staticmethod
+    def _principal(row):
+        return {key: row[key] for key in ("id", "email", "name", "picture")} if row else None
+
+    def current_user(self, request: Request):
+        """Fresh read-only validation, also used to recheck open event streams."""
+        return self._principal(self._session(request))
+
+    def authenticate_request(self, request: Request):
+        """Renew an active token only near expiry, without rotating its identity.
+
+        The compare-and-set makes simultaneous tabs share one renewal. A losing
+        request rereads the row so revocation cannot be mistaken for a refresh.
+        """
+        row = self._session(request)
+        if row is None:
+            return None, None
+        remaining = (row["expires"] - row["checked_at"]).total_seconds()
+        target = min(
+            row["checked_at"] + timedelta(seconds=SESSION_SECONDS), row["absolute_expires"]
+        )
+        cookie_age = None
+        if remaining <= SESSION_REFRESH_SECONDS and target > row["expires"]:
+            token = request.cookies[self.settings.cookie_name]
+            with self.db.connection() as connection:
+                renewed = connection.execute(
+                    "UPDATE beatit.sessions SET expires=%s "
+                    "WHERE token_hash=%s AND expires=%s AND expires>UTC_TIMESTAMP(6) "
+                    "AND COALESCE(absolute_expires, DATE_ADD(created, INTERVAL 30 DAY)) "
+                    ">= %s",
+                    (target, token_hash(token), row["expires"], target),
+                ).rowcount
+            if renewed:
+                row["expires"] = target
+            else:
+                original_expiry = row["expires"]
+                row = self._session(request)
+                if row is None:
+                    return None, None
+                if row["expires"] <= original_expiry:
+                    return self._principal(row), None
+            cookie_age = max(1, int((row["expires"] - row["checked_at"]).total_seconds()))
+        return self._principal(row), cookie_age
+
+    def set_session_cookie(self, response: Response, token: str, max_age: int):
+        response.set_cookie(
+            self.settings.cookie_name,
+            token,
+            max_age=max_age,
+            secure=self.settings.secure,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
 
     def revoke_session(self, request: Request):
         token = request.cookies.get(self.settings.cookie_name, "")
@@ -415,8 +475,19 @@ class AuthService:
                 )
 
 
+async def authenticated_user(request: Request):
+    user = getattr(request.state, "beatit_user", _UNCHECKED)
+    if user is _UNCHECKED:
+        user, cookie_age = await run_in_threadpool(
+            request.app.state.auth.authenticate_request, request
+        )
+        request.state.beatit_user = user
+        request.state.beatit_session_cookie_age = cookie_age
+    return user
+
+
 async def require_user(request: Request) -> dict:
-    user = await run_in_threadpool(request.app.state.auth.current_user, request)
+    user = await authenticated_user(request)
     if user is None:
         raise HTTPException(401, "Google 계정으로 로그인하세요.")
     return user
@@ -426,9 +497,18 @@ def install_auth(app: FastAPI, db, service: AuthService | None = None):
     service = service or AuthService(db)
     app.state.auth = service
 
+    @app.middleware("http")
+    async def session_cookie(request: Request, call_next):
+        response = await call_next(request)
+        age = getattr(request.state, "beatit_session_cookie_age", None)
+        if age is not None and request.url.path != "/api/auth/logout":
+            service.set_session_cookie(response, request.cookies[service.settings.cookie_name], age)
+            response.headers["Cache-Control"] = "private, no-store"
+        return response
+
     @app.get("/api/auth/me")
     async def me(request: Request):
-        user = await run_in_threadpool(service.current_user, request)
+        user = await authenticated_user(request)
         return JSONResponse({"user": user}, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/auth/google")

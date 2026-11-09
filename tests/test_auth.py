@@ -1,5 +1,9 @@
 import asyncio
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
@@ -8,9 +12,13 @@ from authlib.jose import JoseError, JsonWebKey, JsonWebToken
 from authlib.oauth2 import OAuth2Error
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
+from starlette.responses import StreamingResponse
 
 from transcription.auth import (
+    SESSION_ABSOLUTE_SECONDS,
+    SESSION_SECONDS,
     AuthService,
     AuthSettings,
     install_auth,
@@ -176,6 +184,270 @@ def test_logout_revokes_database_session_and_clears_cookie(service):
         assert "Max-Age=0" in response.headers["set-cookie"]
         assert service.current_user(cookie_request(service, token)) is None
         assert client.get("/private").status_code == 401
+
+
+def session_row(service, token):
+    with service.db.connection() as connection:
+        return connection.execute(
+            "SELECT *, UTC_TIMESTAMP(6) AS checked_at FROM beatit.sessions WHERE token_hash=%s",
+            (token_hash(token),),
+        ).fetchone()
+
+
+def test_valid_session_is_reused_without_cookie_writes_or_public_authentication(
+    service, monkeypatch
+):
+    token, user = service.create_session(identity())
+    before = session_row(service, token)
+    checked = []
+    original = service._session
+
+    def lookup(request):
+        checked.append(True)
+        return original(request)
+
+    monkeypatch.setattr(service, "_session", lookup)
+    app = auth_app(service)
+
+    @app.get("/public")
+    def public():
+        return {"status": "ok"}
+
+    with TestClient(app, base_url=service.settings.public_url) as client:
+        client.cookies.set(service.settings.cookie_name, token)
+        assert "set-cookie" not in client.get("/public").headers
+        assert checked == []
+        for path in ("/private", "/api/auth/me", "/private"):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert "set-cookie" not in response.headers
+        assert len(checked) == 3
+        assert client.get("/api/auth/me").json()["user"]["id"] == user["id"]
+    after = session_row(service, token)
+    assert after["expires"] == before["expires"]
+    assert after["absolute_expires"] - after["created"] == timedelta(
+        seconds=SESSION_ABSOLUTE_SECONDS
+    )
+
+
+def test_next_authenticated_request_renews_the_same_token_once(service):
+    token, user = service.create_session(identity())
+    with service.db.connection() as connection:
+        connection.execute(
+            "UPDATE beatit.sessions SET expires=UTC_TIMESTAMP(6)+INTERVAL 1 HOUR WHERE token_hash=%s",
+            (token_hash(token),),
+        )
+    with TestClient(auth_app(service), base_url=service.settings.public_url) as client:
+        client.cookies.set(service.settings.cookie_name, token)
+        response = client.get("/private")
+        assert response.json()["id"] == user["id"]
+        assert response.cookies.get(service.settings.cookie_name) == token
+        cookie = response.headers["set-cookie"]
+        assert all(word in cookie for word in ("Secure", "HttpOnly", "SameSite=lax", "Path=/"))
+        assert "Domain=" not in cookie
+        assert response.headers["cache-control"] == "private, no-store"
+        renewed = session_row(service, token)
+        remaining = (renewed["expires"] - renewed["checked_at"]).total_seconds()
+        assert SESSION_SECONDS - 10 < remaining <= SESSION_SECONDS
+        assert "set-cookie" not in client.get("/api/auth/me").headers
+        assert "set-cookie" not in client.get("/private").headers
+        assert session_row(service, token)["expires"] == renewed["expires"]
+
+
+def test_renewal_is_bounded_by_absolute_session_expiry(service):
+    token, _ = service.create_session(identity())
+    with service.db.connection() as connection:
+        connection.execute(
+            "UPDATE beatit.sessions SET expires=UTC_TIMESTAMP(6)+INTERVAL 1 HOUR, "
+            "absolute_expires=UTC_TIMESTAMP(6)+INTERVAL 3 HOUR WHERE token_hash=%s",
+            (token_hash(token),),
+        )
+    with TestClient(auth_app(service), base_url=service.settings.public_url) as client:
+        client.cookies.set(service.settings.cookie_name, token)
+        response = client.get("/private")
+        assert response.status_code == 200
+        row = session_row(service, token)
+        assert row["expires"] == row["absolute_expires"]
+        age = int(response.headers["set-cookie"].split("Max-Age=", 1)[1].split(";", 1)[0])
+        assert 3 * 60 * 60 - 10 < age <= 3 * 60 * 60
+        # At the absolute boundary, every later request must not rewrite the cookie.
+        assert "set-cookie" not in client.get("/private").headers
+
+
+@pytest.mark.parametrize("expired", ["expires", "absolute_expires"])
+def test_expired_sessions_are_never_refreshed(service, expired):
+    token, _ = service.create_session(identity())
+    with service.db.connection() as connection:
+        connection.execute(
+            f"UPDATE beatit.sessions SET {expired}=UTC_TIMESTAMP(6)-INTERVAL 1 SECOND "
+            "WHERE token_hash=%s",
+            (token_hash(token),),
+        )
+    with TestClient(auth_app(service), base_url=service.settings.public_url) as client:
+        client.cookies.set(service.settings.cookie_name, token)
+        response = client.get("/private")
+        assert response.status_code == 401
+        assert "set-cookie" not in response.headers
+        assert client.get("/api/auth/me").json() == {"user": None}
+
+
+def test_simultaneous_tabs_share_one_bounded_refresh(service, monkeypatch):
+    token, user = service.create_session(identity())
+    with service.db.connection() as connection:
+        connection.execute(
+            "UPDATE beatit.sessions SET expires=UTC_TIMESTAMP(6)+INTERVAL 1 HOUR, "
+            "absolute_expires=UTC_TIMESTAMP(6)+INTERVAL 3 DAY WHERE token_hash=%s",
+            (token_hash(token),),
+        )
+    before = session_row(service, token)
+    barrier = threading.Barrier(4)
+    calls = threading.local()
+    lookup = service._session
+    connect = service.db.connection
+    writes = []
+
+    def simultaneous_lookup(request):
+        row = lookup(request)
+        if not getattr(calls, "checked", False):
+            calls.checked = True
+            barrier.wait(timeout=10)
+        return row
+
+    @contextmanager
+    def observed_connection():
+        with connect() as connection:
+            execute = connection.execute
+
+            def observed_execute(query, params=None, **kwargs):
+                result = execute(query, params, **kwargs)
+                if query.startswith("UPDATE beatit.sessions SET expires="):
+                    writes.append(result.rowcount)
+                return result
+
+            connection.execute = observed_execute
+            yield connection
+
+    monkeypatch.setattr(service, "_session", simultaneous_lookup)
+    monkeypatch.setattr(service.db, "connection", observed_connection)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(
+            executor.map(
+                lambda _: service.authenticate_request(cookie_request(service, token)), range(4)
+            )
+        )
+    assert [principal["id"] for principal, _ in results] == [user["id"]] * 4
+    assert all(age and 0 < age <= 3 * 24 * 60 * 60 for _, age in results)
+    assert sorted(writes) == [0, 0, 0, 1]
+    row = session_row(service, token)
+    assert row["expires"] == row["absolute_expires"] == before["absolute_expires"]
+    assert row["token_hash"] == before["token_hash"]
+
+
+def test_revocation_during_a_refresh_cannot_resurrect_the_session(service, monkeypatch):
+    token, _ = service.create_session(identity())
+    with service.db.connection() as connection:
+        connection.execute(
+            "UPDATE beatit.sessions SET expires=UTC_TIMESTAMP(6)+INTERVAL 1 HOUR WHERE token_hash=%s",
+            (token_hash(token),),
+        )
+    original = service._session
+    first = True
+
+    def revoked_after_validation(request):
+        nonlocal first
+        row = original(request)
+        if first:
+            first = False
+            service.revoke_session(request)
+        return row
+
+    monkeypatch.setattr(service, "_session", revoked_after_validation)
+    with TestClient(auth_app(service), base_url=service.settings.public_url) as client:
+        client.cookies.set(service.settings.cookie_name, token)
+        response = client.get("/private")
+        assert response.status_code == 401
+        assert "set-cookie" not in response.headers
+    assert session_row(service, token) is None
+
+
+def test_current_user_rechecks_a_previously_authenticated_stream_request(service):
+    token, user = service.create_session(identity())
+    request = cookie_request(service, token)
+    request.state.beatit_user = user
+    assert service.current_user(request)["id"] == user["id"]
+    service.revoke_session(request)
+    assert service.current_user(request) is None
+
+
+def test_stream_handshake_renews_cookie_before_body_and_rechecks_revocation(service):
+    token, user = service.create_session(identity())
+    with service.db.connection() as connection:
+        connection.execute(
+            "UPDATE beatit.sessions SET expires=UTC_TIMESTAMP(6)+INTERVAL 1 HOUR WHERE token_hash=%s",
+            (token_hash(token),),
+        )
+    app = auth_app(service)
+
+    @app.get("/api/stream-once")
+    async def stream_once(request: Request, principal=Depends(require_user)):
+        async def frames():
+            assert principal["id"] == user["id"]
+            yield "event: snapshot\ndata: {}\n\n"
+            await run_in_threadpool(service.revoke_session, request)
+            # The handshake's cached principal must not outlive server revocation.
+            assert request.state.beatit_user["id"] == user["id"]
+            assert await run_in_threadpool(service.current_user, request) is None
+            yield "event: session-expired\ndata: {}\n\n"
+
+        return StreamingResponse(frames(), media_type="text/event-stream")
+
+    with TestClient(app, base_url=service.settings.public_url) as client:
+        client.cookies.set(service.settings.cookie_name, token)
+        response = client.get("/api/stream-once")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert response.cookies.get(service.settings.cookie_name) == token
+        assert "HttpOnly" in response.headers["set-cookie"]
+        assert response.text == (
+            "event: snapshot\ndata: {}\n\nevent: session-expired\ndata: {}\n\n"
+        )
+        assert client.get("/private").status_code == 401
+
+
+def test_legacy_sessions_survive_the_renewal_migration_and_partial_ddl_retry(service):
+    token, user = service.create_session(identity())
+    expiry = session_row(service, token)["expires"]
+    with service.db.connection() as connection:
+        connection.execute("ALTER TABLE beatit.sessions DROP COLUMN created")
+        connection.execute("ALTER TABLE beatit.sessions DROP COLUMN absolute_expires")
+        connection.execute(
+            "DELETE FROM beatit.schema_migrations WHERE name=%s", ("006_session_renewal.sql",)
+        )
+    try:
+        service.db.migrate()
+        row = session_row(service, token)
+        assert row["expires"] == expiry
+        assert row["absolute_expires"] - row["created"] == timedelta(
+            seconds=SESSION_ABSOLUTE_SECONDS
+        )
+        assert service.current_user(cookie_request(service, token))["id"] == user["id"]
+        # Replaying after an implicit DDL commit must keep the existing columns/data.
+        with service.db.connection() as connection:
+            connection.execute(
+                "DELETE FROM beatit.schema_migrations WHERE name=%s", ("006_session_renewal.sql",)
+            )
+        service.db.migrate()
+        assert session_row(service, token)["expires"] == expiry
+        # An old application image can still insert its original three-column row.
+        legacy_token = "legacy-token-after-rollback"
+        with service.db.connection() as connection:
+            connection.execute(
+                "INSERT INTO beatit.sessions (token_hash,user_id,expires) VALUES (%s,%s,%s)",
+                (token_hash(legacy_token), user["id"], expiry),
+            )
+        assert service.current_user(cookie_request(service, legacy_token))["id"] == user["id"]
+    finally:
+        service.db.migrate()
 
 
 async def google_metadata():
