@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "beatit-media",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-09",
+  "account_id": "1b3a9f1ee67ab460cd8b1eb53c95106c",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "beatit.changkyun.kim/media/*", "zone_name": "changkyun.kim" }],
+  "vars": { "APP_ORIGIN": "https://beatit.changkyun.kim" },
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "beatit" }]
+}

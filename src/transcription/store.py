@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import weakref
 from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
@@ -39,6 +40,8 @@ class JobStore:
         self.pool = self.db.pool
         self.objects = objects if objects is not None else ObjectStorage()
         self.lock = threading.RLock()
+        self._cache_lock_guard = threading.Lock()
+        self._cache_locks = weakref.WeakValueDictionary()
         self.stopping = threading.Event()
         self.current = self.process = self.thread = None
         self.instance = uuid4().hex
@@ -323,7 +326,17 @@ class JobStore:
     def _cached_object(self, manifest):
         # Cache keys include digest so a new revision cannot reuse stale bytes.
         path = self.root / ".objects" / manifest["sha256"] / PurePosixPath(manifest["path"]).name
-        with self.lock:
+        if path.is_file() and path.stat().st_size == manifest["size"]:
+            return path
+        # A slow cold stem must not stall playback of an already cached track,
+        # another artifact, cancellation or the inference process state lock.
+        # Weak values release idle locks once the concurrent readers finish.
+        with self._cache_lock_guard:
+            download_lock = self._cache_locks.get(path)
+            if download_lock is None:
+                download_lock = threading.Lock()
+                self._cache_locks[path] = download_lock
+        with download_lock:
             if path.is_file() and path.stat().st_size == manifest["size"]:
                 return path
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -340,16 +353,24 @@ class JobStore:
                 temporary.unlink(missing_ok=True)
         return path
 
-    def file_path(self, identifier: str, relative: str, owner_id=None):
+    def artifact_manifest(self, identifier: str, relative: str, owner_id=None):
+        """Read an authorized immutable object reference without downloading bytes."""
+        self._identifier(identifier)
         self._safe_path(relative)
+        sql = """SELECT a.* FROM beatit.artifacts a JOIN beatit.jobs j ON j.id=a.job_id
+                 WHERE a.job_id=%s AND a.path=%s"""
+        arguments = [identifier, relative]
+        if owner_id is not None:
+            sql += " AND j.owner_id=%s"
+            arguments.append(owner_id)
         with self.connect() as connection:
-            self._owned(connection, identifier, owner_id)
-            manifest = connection.execute(
-                "SELECT * FROM beatit.artifacts WHERE job_id=%s AND path=%s", (identifier, relative)
-            ).fetchone()
+            manifest = connection.execute(sql, arguments).fetchone()
         if manifest is None:
             raise KeyError(relative)
-        return self._cached_object(manifest)
+        return manifest
+
+    def file_path(self, identifier: str, relative: str, owner_id=None):
+        return self._cached_object(self.artifact_manifest(identifier, relative, owner_id))
 
     def log(self, identifier, owner_id=None):
         with self.connect() as connection:

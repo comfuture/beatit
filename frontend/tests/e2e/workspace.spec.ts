@@ -52,7 +52,7 @@ function sampleJob() {
     },
   };
 }
-async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, events = initialEvents as DrumEvent[], audioTone = false, colab = false, serverManaged = false, modal = false } = {}) {
+async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, events = initialEvents as DrumEvent[], audioTone = false, colab = false, serverManaged = false, modal = false, mediaBaseUrl = "" } = {}) {
   const colabExecution = colab || serverManaged;
   const remoteExecution = colabExecution || modal;
   let job = sampleJob();
@@ -90,6 +90,7 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
           ffmpeg: true,
           verovio: true,
           musescore: false,
+          media_base_url: mediaBaseUrl,
           max_upload_bytes: 1073741824,
           max_duration_seconds: 1800,
         },
@@ -538,6 +539,7 @@ test("upload, progress, cancellation, failure and retry", async ({ page }) => {
     page.getByRole("heading", { name: "드럼 트랙을 분석하고 있습니다" }),
   ).toBeVisible();
   await expect(page.getByText("드럼 분리 중", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/sessions/${id}$`));
   await page.getByRole("button", { name: "취소", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "분석이 취소되었습니다" }),
@@ -1576,3 +1578,62 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
     expect(state.errors).toEqual([]);
   });
 }
+
+test("private direct media preloads audio and shows buffering until a delayed range can play", async ({ page }) => {
+  const wav = Buffer.alloc(44 + 8000 * 8 * 2);
+  wav.write("RIFF");
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(8000, 24);
+  wav.writeUInt32LE(16000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(wav.length - 44, 40);
+  for (let sample = 0; sample < 8000 * 8; sample++)
+    wav.writeInt16LE(Math.round(Math.sin(sample / 8000 * Math.PI * 2 * 220) * 4000), 44 + sample * 2);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const directRequests: { path: string; range?: string }[] = [];
+  const apiAudioRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/\/api\/jobs\/[^/]+\/files\/(audio|drums)\.wav/.test(request.url()))
+      apiAudioRequests.push(request.url());
+  });
+  await page.route("**/media/**", async (route) => {
+    const range = route.request().headers().range;
+    directRequests.push({ path: new URL(route.request().url()).pathname, range });
+    await held;
+    const requested = range?.match(/^bytes=(\d+)-(\d*)$/);
+    const start = Number(requested?.[1] || 0);
+    const end = Math.min(Number(requested?.[2] || wav.length - 1), wav.length - 1);
+    return route.fulfill({
+      status: requested ? 206 : 200,
+      contentType: "audio/wav",
+      headers: {
+        "accept-ranges": "bytes", "cache-control": "private, no-store",
+        ...(requested ? { "content-range": `bytes ${start}-${end}/${wav.length}` } : {}),
+      },
+      body: wav.subarray(start, end + 1),
+    });
+  });
+  const state = await setup(page, { mediaBaseUrl: "/media" });
+  await openSession(page);
+  await expect(page.locator("audio")).toHaveAttribute("src", `/media/${id}/audio.wav`);
+  await expect(page.locator("audio")).toHaveAttribute("preload", "auto");
+  await page.getByRole("button", { name: "재생", exact: true }).click();
+  await expect(page.getByText("오디오 버퍼를 채우는 중…", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "오디오 타임라인" })).toHaveAttribute("aria-busy", "true");
+  await expect(page.getByRole("button", { name: "일시 정지", exact: true })).toBeVisible();
+  release();
+  await expect.poll(() => page.locator("audio").evaluate((audio: HTMLAudioElement) => !audio.paused && audio.currentTime > 0.1)).toBe(true);
+  await expect(page.getByText("오디오 버퍼를 채우는 중…", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "오디오 타임라인" })).toHaveAttribute("aria-busy", "false");
+  await page.getByRole("button", { name: "정지", exact: true }).click();
+  expect(directRequests.some((request) => request.path === `/media/${id}/audio.wav` && request.range?.startsWith("bytes="))).toBe(true);
+  expect(apiAudioRequests).toEqual([]);
+  expect(state.errors).toEqual([]);
+});

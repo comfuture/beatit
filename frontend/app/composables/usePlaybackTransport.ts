@@ -12,6 +12,7 @@ export function usePlaybackTransport(
 ) {
   const position = ref(0);
   const playing = ref(false);
+  const buffering = ref(false);
   const audioEnabled = ref(true);
   const drumsEnabled = ref(false);
   const audioVolume = ref(80);
@@ -139,7 +140,8 @@ export function usePlaybackTransport(
   function startClock() {
     if (!playing.value || disposed || running || !context) return;
     // Let media seeking/buffering settle before starting the matching drums.
-    if (audioEnabled.value && (sourceLoading || player.value?.seeking)) return;
+    if (audioEnabled.value && (sourceLoading || player.value?.seeking ||
+        !player.value || player.value.readyState < 3)) return;
     anchorPosition = pendingStart ?? position.value;
     pendingStart = undefined;
     anchorTime = context.currentTime;
@@ -177,9 +179,11 @@ export function usePlaybackTransport(
       pendingStart = position.value;
       error.value = "";
       playing.value = true;
+      buffering.value = audioEnabled.value && (!player.value || player.value.readyState < 3);
       if (audioEnabled.value) {
         if (!player.value) return;
-        player.value.currentTime = position.value;
+        if (Math.abs(player.value.currentTime - position.value) > 0.01)
+          player.value.currentTime = position.value;
         player.value.playbackRate = rate.value;
         await player.value.play();
         if (token !== operation || disposed) return;
@@ -199,6 +203,7 @@ export function usePlaybackTransport(
     resumeSource = false;
     const now = clock();
     playing.value = false;
+    buffering.value = false;
     stopClock();
     player.value?.pause();
     publish(audioEnabled.value && !sourceLoading && player.value ? player.value.currentTime : now);
@@ -241,13 +246,15 @@ export function usePlaybackTransport(
     pause();
     resumeSource = resume;
     sourceLoading = true;
+    buffering.value = resume;
   }
   function mediaReady() {
     sourceLoading = false;
     applyVolumes();
     if (!player.value) return;
     player.value.playbackRate = rate.value;
-    player.value.currentTime = position.value;
+    if (Math.abs(player.value.currentTime - position.value) > 0.01)
+      player.value.currentTime = position.value;
     if (resumeSource && audioEnabled.value) {
       resumeSource = false;
       void play(false);
@@ -256,11 +263,13 @@ export function usePlaybackTransport(
   function mediaPlaying() {
     if (!audioEnabled.value || !playing.value || player.value?.paused) return;
     sourceLoading = false;
+    buffering.value = false;
     publish(player.value?.currentTime || 0);
     startClock();
   }
   function mediaWaiting() {
-    if (!audioEnabled.value) return;
+    if (!audioEnabled.value || !playing.value || player.value?.paused) return;
+    buffering.value = true;
     publish(clock());
     stopClock();
   }
@@ -344,6 +353,7 @@ export function usePlaybackTransport(
   });
   return {
     position, playing, audioEnabled, drumsEnabled, audioVolume, drumVolume, rate, range, repeatEnabled, pendingEdits, error, canPlay,
+    buffering,
     toggle, pause, seek, stop, playBar, clearRange, selectRange, sourceChanged,
     mediaReady, mediaPlaying, mediaWaiting, mediaTime, mediaSeeked, mediaPaused, mediaEnded, mediaError,
   };

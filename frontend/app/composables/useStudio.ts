@@ -9,9 +9,21 @@ import {
 import { validateOptions } from "~/utils/rhythm";
 import { mergeBeatReview, reviewAfterEdit } from "~/utils/beatReview";
 import { connectionUnavailable, runtimeStatus } from "~/utils/execution";
+import { sessionIdFromPath, sessionPath } from "~/utils/sessionLocation";
 
 export function useStudio(userId: string, onUnauthorized: () => void) {
   const storageKey = `beatit-session:${userId}`;
+  type LocationMode = "push" | "replace" | "none";
+  const sessionLocation = ref("/");
+  function commitLocation(path: string, mode: LocationMode) {
+    sessionLocation.value = path;
+    if (mode !== "none" && window.location.pathname !== path) {
+      window.history[mode === "replace" ? "replaceState" : "pushState"](
+        window.history.state, "", path,
+      );
+      window.dispatchEvent(new Event("beatit-location-change"));
+    }
+  }
   const jobs = ref<Job[]>([]);
   const current = ref<Job | null>(null);
   const system = ref<SystemInfo | null>(null);
@@ -107,13 +119,14 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       if (!response.ok) {
         const body = await response.json().catch(() => null);
         const detail = body?.detail;
-        throw new Error(
+        const error = new Error(
           typeof detail === "string"
             ? detail
             : detail
               ? JSON.stringify(detail)
               : `서버 오류 (${response.status})`,
         );
+        throw Object.assign(error, { status: response.status });
       }
       const result = response.status === 204 ? (undefined as T) : await response.json();
       assertActive();
@@ -195,7 +208,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     }
     if (!disposed) timer = setTimeout(poll, 1800);
   }
-  async function selectJob(id: string) {
+  async function selectJob(id: string, locationMode: LocationMode = "push") {
+    const path = sessionPath(id);
     const token = ++selection;
     activeId.value = id;
     current.value = null;
@@ -208,16 +222,21 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     undoStack.value = [];
     redoStack.value = [];
     loadingEvents.value = true;
+    commitLocation(path, locationMode);
     try {
       await showJob(await api<Job>(`/api/jobs/${id}`), token);
       if (token === selection) localStorage.setItem(storageKey, id);
     } catch (e) {
-      if (token === selection) report(e);
+      if (token === selection) {
+        if ((e as { status?: number }).status === 404)
+          error.value = "세션을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 주소입니다.";
+        else report(e);
+      }
     } finally {
       if (token === selection) loadingEvents.value = false;
     }
   }
-  function newSession() {
+  function newSession(locationMode: LocationMode = "push") {
     selection++;
     activeId.value = null;
     current.value = null;
@@ -232,6 +251,15 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     selectedFile.value = null;
     loadingEvents.value = false;
     localStorage.removeItem(storageKey);
+    commitLocation("/", locationMode);
+  }
+  async function openLocation(path = window.location.pathname, mode: LocationMode = "none") {
+    const id = sessionIdFromPath(path);
+    if (id) await selectJob(id, mode);
+    else {
+      newSession(mode);
+      if (id === undefined) error.value = "올바르지 않은 세션 주소입니다.";
+    }
   }
   function chooseFile(file: File) {
     const extensions =
@@ -467,9 +495,9 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       await refreshSystem();
       online.value = true;
       await refreshHistory();
-      const saved = localStorage.getItem(storageKey);
-      if (saved && jobs.value.some((j) => j.id === saved))
-        await selectJob(saved);
+      // The permalink is authoritative; '/' deliberately starts a blank session.
+      // A valid deep link is checked by the server even outside the latest history.
+      await openLocation();
       if (system.value && !system.value.ffmpeg)
         error.value =
           "FFmpeg/ffprobe가 없습니다. README의 설치 안내를 확인하세요.";
@@ -526,6 +554,8 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     fileUrl,
     selectJob,
     newSession,
+    openLocation,
+    sessionLocation,
     chooseFile,
     upload,
     action,

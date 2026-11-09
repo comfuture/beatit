@@ -17,10 +17,27 @@ function jobFor(owner: string) {
     },
   };
 }
+function silentWave() {
+  const wav = Buffer.alloc(44 + 8000 * 8 * 2);
+  wav.write("RIFF");
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(8000, 24);
+  wav.writeUInt32LE(16000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(wav.length - 44, 40);
+  return wav;
+}
 async function accountApi(page: Page, initial: string | null) {
   let owner = initial;
   let denyJobs = false;
   let historyRequests = 0;
+  let hideHistory = false;
   let hold: ((route: Route) => Promise<void>) | null = null;
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -35,13 +52,13 @@ async function accountApi(page: Page, initial: string | null) {
     } });
     if (path === "/api/jobs") {
       historyRequests++;
-      return route.fulfill(denyJobs || !owner ? { status: 401, json: { detail: "Sign in" } } : { json: [jobFor(owner)] });
+      return route.fulfill(denyJobs || !owner ? { status: 401, json: { detail: "Sign in" } } : { json: hideHistory ? [] : [jobFor(owner)] });
     }
-    if (hold && path === `/api/jobs/${"a".repeat(32)}`) return hold(route);
     if (!owner || !path.startsWith(`/api/jobs/${jobFor(owner).id}`)) return route.fulfill({ status: 404 });
+    if (hold && path === `/api/jobs/${"a".repeat(32)}`) return hold(route);
     if (path.endsWith("events.json")) return route.fulfill({ json: [{ time: 0, pitch: 35, strength: 0.8, velocity: 100 }] });
     if (path.endsWith("waveform")) return route.fulfill({ json: { duration: 8, peaks: [0.2, 0.5, 0.2] } });
-    if (path.endsWith(".wav")) return route.fulfill({ contentType: "audio/wav", body: Buffer.alloc(44) });
+    if (path.endsWith(".wav")) return route.fulfill({ contentType: "audio/wav", body: silentWave() });
     return route.fulfill({ json: jobFor(owner) });
   });
   return {
@@ -49,6 +66,7 @@ async function accountApi(page: Page, initial: string | null) {
     expire: () => { owner = null; denyJobs = true; },
     denyHistory: () => { denyJobs = true; },
     historyRequests: () => historyRequests,
+    hideHistory: () => { hideHistory = true; },
     holdDetail: (callback: (route: Route) => Promise<void>) => { hold = callback; },
   };
 }
@@ -211,3 +229,86 @@ test("failed logout keeps both tabs cleared until an explicit retry", async ({ b
     await context.close();
   }
 });
+
+test("a session permalink restores directly after storage loss and root remains blank", async ({ page }) => {
+  const api = await accountApi(page, "A");
+  api.hideHistory();
+  const path = `/sessions/${"a".repeat(32)}`;
+  await page.goto(path);
+  await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+  await expect(page.locator(".header-filename")).toHaveText("A private.wav");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expect(page).toHaveURL(new RegExp(`${path}$`));
+  await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+  await page.getByRole("button", { name: "새로 만들기", exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.locator("audio")).toHaveCount(0);
+  await page.evaluate(() => localStorage.setItem("beatit-session:A", "a".repeat(32)));
+  await page.reload();
+  await expect(page.locator(".header-filename")).toHaveText("새 세션");
+  await expect(page.locator("audio")).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`${path}$`));
+  await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+});
+
+for (const scenario of [
+  { owner: "B", id: "a".repeat(32), label: "another owner's" },
+  { owner: "A", id: "c".repeat(32), label: "a missing or deleted" },
+]) {
+  test(`${scenario.label} permalink never loads private media or a fallback selection`, async ({ page }) => {
+    const api = await accountApi(page, scenario.owner);
+    api.hideHistory();
+    await page.addInitScript(({ owner, id }) => localStorage.setItem(`beatit-session:${owner}`, id), { owner: scenario.owner, id: jobFor(scenario.owner).id });
+    await page.goto(`/sessions/${scenario.id}`);
+    await expect(page.getByText("세션을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 주소입니다.")).toBeVisible();
+    await expect(page.locator("audio, .audio-timeline")).toHaveCount(0);
+    await expect(page.locator(".header-filename")).toHaveText("새 세션");
+  });
+}
+
+test("a signed-out permalink keeps its canonical target through Google login", async ({ page }) => {
+  const api = await accountApi(page, null);
+  const path = `/sessions/${"a".repeat(32)}`;
+  await page.route("**/api/auth/google?*", async (route) => {
+    expect(new URL(route.request().url()).searchParams.get("return_to")).toBe(path);
+    api.switchTo("A");
+    return route.fulfill({ status: 302, headers: { location: path } });
+  });
+  await page.goto(path);
+  const login = page.getByRole("link", { name: "Google로 시작하기" });
+  await expect(login).toHaveAttribute("href", `/api/auth/google?return_to=${encodeURIComponent(path)}`);
+  expect(api.historyRequests()).toBe(0);
+  await login.click();
+  await expect(page).toHaveURL(new RegExp(`${path}$`));
+  await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+});
+
+for (const viewport of [
+  { width: 1440, height: 900, band: "desktop" },
+  { width: 1024, height: 768, band: "medium" },
+  { width: 820, height: 1180, band: "medium" },
+  { width: 390, height: 844, band: "mobile" },
+]) {
+  test(`${viewport.band} ${viewport.width}px defaults preserve the requested navigation and settings layout`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await accountApi(page, "A");
+    await page.goto(`/sessions/${"a".repeat(32)}`);
+    await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+    const sidebar = page.locator('aside[data-slot="root"]');
+    await expect(sidebar).toHaveAttribute("data-state", viewport.band === "desktop" ? "expanded" : "collapsed");
+    if (viewport.band === "mobile") {
+      await expect(page.locator(".inspector")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "속성 패널" })).toBeVisible();
+      await page.getByRole("button", { name: "속성 패널" }).click();
+      await expect(page.getByRole("dialog", { name: "악보 설정" })).toBeVisible();
+    } else {
+      await expect(page.locator(".inspector")).toBeVisible();
+      await expect(page.locator(".inspector").getByRole("spinbutton", { name: "템포 BPM" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "속성 패널" })).toHaveCount(0);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: `test-results/session-layout-${viewport.width}.png`, fullPage: true });
+  });
+}

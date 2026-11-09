@@ -2,7 +2,7 @@
 import type { DrumEvent, Job } from "~/types/studio";
 import { formatTime } from "~/utils/rhythm";
 import { timePlaybackRange } from "~/utils/drumPlayback";
-const props = defineProps<{ job: Job; events: DrumEvent[] }>();
+const props = defineProps<{ job: Job; events: DrumEvent[]; mediaBaseUrl?: string }>();
 const emit = defineEmits<{
   time: [value: number];
   navigate: [value: number];
@@ -58,7 +58,7 @@ const transport = usePlaybackTransport(
   duration, (value) => emit("time", value),
   (value) => emit("navigate", value),
 );
-const { position, playing, audioVolume, drumVolume, rate, audioEnabled, drumsEnabled, range, repeatEnabled, pendingEdits, canPlay, error: playbackError } = transport;
+const { position, playing, buffering, audioVolume, drumVolume, rate, audioEnabled, drumsEnabled, range, repeatEnabled, pendingEdits, canPlay, error: playbackError } = transport;
 const { seek, toggle } = transport;
 const drag = shallowRef<{
   pointer: number; target: HTMLElement; left: number; width: number;
@@ -68,7 +68,11 @@ const displayedRange = computed(() => drag.value?.moved
   ? timePlaybackRange(drag.value.first, drag.value.last, duration.value)
   : range.value);
 watch(canPlay, (value) => emit("enabled", value), { immediate: true });
-const url = computed(() => `/api/jobs/${props.job.id}/files/${source.value}`);
+const url = computed(() => {
+  const base = props.mediaBaseUrl?.replace(/\/+$/, "");
+  return base ? `${base}/${props.job.id}/${source.value}`
+    : `/api/jobs/${props.job.id}/files/${source.value}`;
+});
 const path = computed(() =>
   peaks.value
     .map((value, index) => {
@@ -189,7 +193,7 @@ onMounted(() => {
   measureMinimumHeight();
   window.addEventListener("keydown", shortcut);
 });
-watch(playbackError, measureMinimumHeight, { flush: "post" });
+watch([playbackError, buffering], measureMinimumHeight, { flush: "post" });
 onBeforeUnmount(() => {
   cancelSelection();
   request?.abort();
@@ -204,7 +208,7 @@ defineExpose({ seek, playBar: transport.playBar });
 </script>
 
 <template>
-  <section ref="surface" class="audio-timeline" aria-label="오디오 타임라인">
+  <section ref="surface" class="audio-timeline" aria-label="오디오 타임라인" :aria-busy="buffering">
     <div class="panel-toolbar">
       <span><UIcon name="i-lucide-audio-lines" /> 오디오</span>
       <div class="flex items-center gap-2">
@@ -364,6 +368,7 @@ defineExpose({ seek, playBar: transport.playBar });
       <span v-else>전체 재생</span>
       <span v-if="range && repeatEnabled">반복 켜짐</span>
       <span v-if="repeatEnabled && pendingEdits" class="text-primary">수정 내용은 다음 반복부터 반영됩니다.</span>
+      <span v-if="buffering" class="text-primary">오디오 버퍼를 채우는 중…</span>
       <span v-if="!canPlay">재생할 트랙을 켜세요.</span>
       <span class="transport-clock-compact mono">{{ formatTime(position) }} / {{ formatTime(duration) }}</span>
     </div>
@@ -373,7 +378,7 @@ defineExpose({ seek, playBar: transport.playBar });
     <audio
       ref="player"
       :src="url"
-      preload="metadata"
+      preload="auto"
       @loadedmetadata="transport.mediaReady"
       @timeupdate="transport.mediaTime"
       @playing="transport.mediaPlaying"

@@ -62,7 +62,10 @@ const discardOpen = ref(false);
 const deleteOpen = ref(false);
 const helpOpen = ref(false);
 let pendingAction: (() => void) | null = null;
-const compact = ref(false);
+type LayoutBand = "mobile" | "medium" | "desktop";
+const layoutBand = ref<LayoutBand>("desktop");
+const compact = computed(() => layoutBand.value === "mobile");
+const sidebarOverlay = ref(false);
 const timelineMinimumHeight = ref(260);
 const editorMinimumHeight = 240;
 const filteredJobs = computed(() =>
@@ -74,10 +77,10 @@ const tabs = [
   { label: "비트 편집", icon: "i-lucide-grid-2x2", value: "edit" },
   { label: "악보 보기", icon: "i-lucide-file-music", value: "score" },
 ];
-const mainPanels: SplitterItem[] = [
-  { slot: "workspace", defaultSize: 77, minSize: 50, class: "overflow-y-auto" },
-  { slot: "inspector", defaultSize: 23, minSize: 19, maxSize: 38 },
-];
+const mainPanels = computed<SplitterItem[]>(() => [
+  { slot: "workspace", defaultSize: layoutBand.value === "medium" ? 70 : 77, minSize: 50, class: "overflow-y-auto" },
+  { slot: "inspector", defaultSize: layoutBand.value === "medium" ? 30 : 23, minSize: layoutBand.value === "medium" ? 24 : 19, maxSize: 40 },
+]);
 const editorPanels = computed<SplitterItem[]>(() => [
   { slot: "timeline", sizeUnit: "px", defaultSize: 300, minSize: timelineMinimumHeight.value },
   { slot: "editor", sizeUnit: "px", minSize: editorMinimumHeight },
@@ -163,13 +166,13 @@ function openJob(id: string) {
   navigate(() => {
     studio.selectJob(id);
     position.value = 0;
-    if (compact.value) sidebarOpen.value = false;
+    if (sidebarOverlay.value) sidebarOpen.value = false;
   });
 }
 function browseSessions() {
   search.value = "";
   selectedJobId.value = current.value?.id || null;
-  if (compact.value) sidebarOpen.value = false;
+  if (sidebarOverlay.value) sidebarOpen.value = false;
   sessionBrowserOpen.value = true;
 }
 function loadSession() {
@@ -181,7 +184,7 @@ function newSession() {
   navigate(() => {
     studio.newSession();
     position.value = 0;
-    if (compact.value) sidebarOpen.value = false;
+    if (sidebarOverlay.value) sidebarOpen.value = false;
   });
 }
 function discard() {
@@ -214,21 +217,40 @@ function shortcuts(event: KeyboardEvent) {
     event.shiftKey ? studio.redo() : studio.undo();
   }
 }
-let media: MediaQueryList | undefined;
 function resize() {
-  compact.value = window.innerWidth < 1100;
+  sidebarOverlay.value = window.innerWidth < 1024;
+  const next: LayoutBand = window.innerWidth < 768
+    ? "mobile" : window.innerWidth < 1280 ? "medium" : "desktop";
+  if (next !== layoutBand.value) {
+    layoutBand.value = next;
+    inspectorOpen.value = false;
+    sidebarOpen.value = next === "desktop";
+    // USidebar also changes its mobile model at 1024px. Apply our layout default
+    // after that transition, then retain manual toggles within the same band.
+    void nextTick(() => { sidebarOpen.value = next === "desktop"; });
+  }
+}
+function historyNavigation() {
+  const destination = window.location.pathname;
+  if (dirty.value || uploading.value || mutating.value) {
+    // Keep the current URL while the existing draft guard asks about navigation.
+    window.history.replaceState(window.history.state, "", studio.sessionLocation.value);
+    window.dispatchEvent(new Event("beatit-location-change"));
+    navigate(() => { void studio.openLocation(destination, "push"); });
+  } else void studio.openLocation(destination);
 }
 onMounted(() => {
   resize();
-  sidebarOpen.value = window.innerWidth >= 1024;
-  media = window.matchMedia("(max-width: 1099px)");
-  media.addEventListener("change", resize);
+  sidebarOpen.value = layoutBand.value === "desktop";
+  window.addEventListener("resize", resize);
+  window.addEventListener("popstate", historyNavigation);
   window.addEventListener("dragover", globalDrop);
   window.addEventListener("drop", globalDrop);
   window.addEventListener("keydown", shortcuts);
 });
 onBeforeUnmount(() => {
-  media?.removeEventListener("change", resize);
+  window.removeEventListener("resize", resize);
+  window.removeEventListener("popstate", historyNavigation);
   window.removeEventListener("dragover", globalDrop);
   window.removeEventListener("drop", globalDrop);
   window.removeEventListener("keydown", shortcuts);
@@ -408,7 +430,7 @@ onBeforeUnmount(() => {
         <div class="workspace-container">
           <USplitter
             id="studio-layout"
-            auto-save-id="beatit-layout-v1"
+            :auto-save-id="`beatit-layout-v2-${layoutBand}`"
             :items="
               compact
                 ? [{ slot: 'workspace', defaultSize: 100, minSize: 100, class: 'overflow-y-auto' }]
@@ -439,6 +461,7 @@ onBeforeUnmount(() => {
                       :key="current.id"
                       :job="current"
                       :events="events"
+                      :media-base-url="system?.media_base_url"
                       @time="position = $event"
                       @navigate="beatEditor?.revealPosition($event)"
                       @enabled="playbackEnabled = $event"

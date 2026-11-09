@@ -8,6 +8,7 @@ import asyncio
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import time
 from dataclasses import dataclass
@@ -36,6 +37,20 @@ ISSUERS = {"https://accounts.google.com", "accounts.google.com"}
 STATE_SECONDS = 600
 SESSION_SECONDS = 7 * 24 * 60 * 60
 _jwt = JsonWebToken(["RS256"])
+
+
+def login_return_path(value: str) -> str:
+    """Only the workspace and canonical session permalinks can receive login."""
+    if value == "/" or re.fullmatch(r"/sessions/[0-9a-f]{32}", value):
+        return value
+    raise HTTPException(400, "올바른 세션 주소로 다시 로그인하세요.")
+
+
+def state_return_path(state: str) -> str:
+    # Read only after consuming the browser-bound, single-use state record. The
+    # whole value, including this optional target, is covered by the stored hash.
+    identifier = state.partition(".")[2]
+    return f"/sessions/{identifier}" if re.fullmatch(r"[0-9a-f]{32}", identifier) else "/"
 
 
 def token_hash(value: str) -> str:
@@ -192,8 +207,9 @@ class AuthService:
                 )
             return record
 
-    async def begin_login(self):
+    async def begin_login(self, return_to="/"):
         self._require_configuration()
+        return_to = login_return_path(return_to)
         try:
             metadata = await self._metadata()
         except (httpx.HTTPError, ValueError):
@@ -201,6 +217,8 @@ class AuthService:
                 503, "Google 로그인 서버에 연결할 수 없습니다. 다시 시도하세요."
             ) from None
         state, browser_token = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        if return_to != "/":
+            state += "." + return_to.rsplit("/", 1)[1]
         verifier, nonce = secrets.token_urlsafe(48), secrets.token_urlsafe(32)
         async with self._oauth_client() as client:
             location, _ = client.create_authorization_url(
@@ -313,8 +331,11 @@ class AuthService:
             raise HTTPException(
                 400, "로그인 요청이 만료되었거나 올바르지 않습니다. 다시 로그인하세요."
             )
+        return_path = state_return_path(state)
         if request.query_params.get("error"):
-            response = RedirectResponse(self.settings.public_url + "/?auth_error=cancelled", 303)
+            response = RedirectResponse(
+                self.settings.public_url + return_path + "?auth_error=cancelled", 303
+            )
             response.delete_cookie(
                 self.settings.state_cookie_name,
                 path="/",
@@ -351,7 +372,7 @@ class AuthService:
         token, _ = await run_in_threadpool(
             self.create_session, claims, request.cookies.get(self.settings.cookie_name)
         )
-        response = RedirectResponse(self.settings.public_url + "/", status_code=303)
+        response = RedirectResponse(self.settings.public_url + return_path, status_code=303)
         response.set_cookie(
             self.settings.cookie_name,
             token,
@@ -411,8 +432,8 @@ def install_auth(app: FastAPI, db, service: AuthService | None = None):
         return JSONResponse({"user": user}, headers={"Cache-Control": "no-store"})
 
     @app.get("/api/auth/google")
-    async def login():
-        return await service.begin_login()
+    async def login(return_to: str = "/"):
+        return await service.begin_login(return_to)
 
     @app.get("/api/auth/callback")
     async def callback(request: Request):

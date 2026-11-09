@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import tempfile
 from contextlib import asynccontextmanager
@@ -70,6 +71,9 @@ def create_app(
     data_root: Path | None = None, start_worker: bool = True, *, store=None, auth_service=None
 ) -> FastAPI:
     install_auth_query_redaction()
+    media_base_url = os.environ.get("BEATIT_MEDIA_BASE_URL", "")
+    if media_base_url not in {"", "/media"}:
+        raise RuntimeError("BEATIT_MEDIA_BASE_URL must be empty or /media.")
     store = store or JobStore(data_root or Path(os.environ.get("DRUM_DATA_DIR", "data")))
 
     @asynccontextmanager
@@ -150,6 +154,7 @@ def create_app(
             **execution_capabilities(capabilities()),
             "max_upload_bytes": upload_limit(),
             "max_duration_seconds": MAX_DURATION,
+            "media_base_url": media_base_url,
         }
 
     @app.get("/api/jobs")
@@ -300,6 +305,23 @@ def create_app(
         get_job(identifier, user)
         return store.log(identifier, owner_id=user["id"]) or "아직 로그가 없습니다."
 
+    @app.get("/api/jobs/{identifier}/media-authorize")
+    def media_authorize(
+        identifier: str, source: str = "audio.wav", user: dict = Depends(require_user)
+    ):
+        if source not in JOB_AUDIO:
+            raise HTTPException(404, "오디오가 없습니다.")
+        try:
+            manifest = store.artifact_manifest(identifier, source, owner_id=user["id"])
+        except KeyError:
+            raise HTTPException(404, "오디오가 없습니다.") from None
+        return {
+            "object_key": manifest["object_key"],
+            "size": manifest["size"],
+            "sha256": manifest["sha256"],
+            "content_type": "audio/flac" if source.endswith(".flac") else "audio/wav",
+        }
+
     @app.get("/api/jobs/{identifier}/files/{filename}")
     def artifact(
         identifier: str, filename: str, download: bool = False, user: dict = Depends(require_user)
@@ -370,6 +392,15 @@ def create_app(
             raise HTTPException(422, "파형을 읽을 수 없습니다.") from None
 
     if (STATIC / "index.html").is_file():
+
+        @app.get("/sessions/{identifier}", include_in_schema=False)
+        def session_workspace(identifier: str):
+            # Serve only the shell here. Every session payload still passes the
+            # authenticated owner checks on /api/jobs; arbitrary paths stay 404.
+            if not re.fullmatch(r"[0-9a-f]{32}", identifier):
+                raise HTTPException(404, "세션 주소가 올바르지 않습니다.")
+            return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+
         app.mount("/", StaticFiles(directory=STATIC, html=True), name="web")
     else:
 
