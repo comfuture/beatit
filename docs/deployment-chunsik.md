@@ -1,145 +1,174 @@
 # chunsik deployment
 
-The historical deployment below describes the pre-issue-7 single-user service.
-The multi-user image requires [the MySQL/object/OAuth migration procedure](multi-user-deployment.md)
-before rollout. Its canonical HTTPS origin is `https://beatit.changkyun.kim`, and
-its health check is `/api/health`; `/api/jobs` requires authentication. Existing
-SQLite/JSON data is imported only for an explicitly assigned Google account.
-Do not replace the running image until its credentials, legacy backup/import and
-two-account checks are ready.
+The authenticated multi-user service is available at
+[https://beatit.changkyun.kim](https://beatit.changkyun.kim). It runs as a separate
+Compose project from the retained legacy installation. Durable projects and edits
+use the existing managed OCI MySQL service; uploaded media and generated files use
+private Cloudflare R2. The application data volume is disposable scratch.
 
-Beatit runs in `/home/ubuntu/services/beatit` on chunsik with Docker Compose.
-The ARM64 host runs the web service and local score editing. This deployment selects
-the private Modal GPU engine for inference; local CPU/Mac and Colab remain supported
-service configurations. The frontend is built into the Python image, with one
-application container and one job queue.
+Current setup, migrations, backup/restore and TLS details are in
+[multi-user deployment](multi-user-deployment.md). Sanitized measured evidence is
+recorded in [the 2026-11-09 managed verification record](benchmarks/multiuser-managed-2026-11-09.json).
 
-- Private URL: <http://chunsik.emperor-micro.ts.net:18000>
-- Private IPv4 URL: <http://100.71.242.57:18000>
-- Container: `beatit-beatit-1`
-- Data: Docker volume `beatit_data`
-- Model and compilation caches: Docker volume `beatit_model-cache`
-- Runtime limits: 2 CPUs, 12 GiB RAM; numerical library thread counts: 2
-- Renderer: Verovio (SVG and MusicXML; MuseScore is not installed for PDF)
+## Current multi-user deployment (2026-11-09)
 
-## Modal configuration
+| Item | Observed value |
+| --- | --- |
+| Checkout/deployment directory | `/home/ubuntu/services/beatit-multiuser` |
+| Compose project | `beatit-multiuser` |
+| Application image | `beatit:issue7-dcef260` |
+| Observed image ID | `sha256:1bb1aeec09fe0ab91fb891f44eb4eb18163aeef37e23f38c76269b9b5481bd62` |
+| Platform/user | ARM64, UID 10001 |
+| Private origin | `http://localhost:18001` |
+| Public HTTPS origin | `https://beatit.changkyun.kim` |
+| Health probe | `/api/health` (database reachability); container observed healthy |
+| Inference | Private Modal GPU; local dependencies retained for score edits |
+| Renderer | Verovio; MuseScore/PDF is unavailable in this image |
+| Runtime limits | 2 CPUs, 12 GiB RAM; numerical library thread counts 2 |
 
-Use `COMPOSE_FILE=compose.yaml:compose.modal.yaml` and
-`BEATIT_EXECUTION_BACKEND=modal` in the protected server `.env`. Set
-`BEATIT_MODAL_APP=beatit`, `MODAL_ENVIRONMENT=main`, and the published
-`BEATIT_MODAL_IMAGE` tag documented in [Modal deployment](modal-deployment.md).
-The named image is built/published independently on the operator's machine; the
-chunsik application image retains the local backend dependencies for score edits
-and an explicitly configured local fallback.
+The existing Cloudflare Tunnel routes the public hostname to the loopback origin.
+The existing API proxy on port 10100 and the final HTTP 404 catch-all were
+preserved. Public requests returned 200 for `/`, `/api/health` and `/api/auth/me`;
+unauthenticated `/api/jobs` and `/api/projects` returned 401. The plain-HTTP legacy
+URL is not the login origin: production session cookies require HTTPS.
 
-Store the token ID and secret in separate protected files and configure
-`BEATIT_MODAL_TOKEN_ID_FILE` / `BEATIT_MODAL_TOKEN_SECRET_FILE` with their host paths.
-For file-backed Docker secrets, these files must be readable by container UID 10001;
-setting their owner to `10001:10001` and mode `0400` is sufficient. Keep their parent
-directory private. Do not print token values or include them in deployment records.
+The protected `.env` contains the application, OAuth, OCI and R2 configuration.
+The MySQL CA is mounted as a secret readable by UID 10001 with mode `0400`.
+chunsik connects directly to the private OCI database with `VERIFY_CA`, a pinned CA
+and mandatory certificate-chain verification. The provider-generated certificate
+does not match the connection hostname, so hostname matching is explicitly
+omitted in this configuration. The Mac's measured connection uses SSH TCP
+forwarding through chunsik on local port 13306. A database-specific Cloudflare
+Access hostname was not verified; the application HTTPS tunnel is a separate path.
 
-When moving from the former Colab deployment, check that no job/runtime is active,
-then stop `colab-manager` and `colab-controller` using their existing Compose files.
-Keep their containers, authentication volumes, images and source configuration for
-rollback. Do not remove the data or model-cache volumes. Deploy the application with
-the base and Modal secret overlay, rather than continuing to include Colab overlays.
+## Operate the correct Compose project
 
-Connect from a device on the same Tailscale network. The listener is bound only to
-the server's Tailscale IPv4. For SSH access without a local Tailscale client:
-
-```sh
-ssh -N -L 8000:100.71.242.57:18000 chunsik
-# Open http://127.0.0.1:8000
-```
-
-The server's `.env` holds the binding and permitted Host names. This file is not
-in Git or the image. The service has no login and should stay on a private network.
-
-## Operations
+Use the explicit project, environment file and MySQL TLS overlay so commands do
+not select the legacy service. Modal is selected by the protected environment
+configuration (`BEATIT_EXECUTION_BACKEND=modal`). The following shell function is
+local to the operator shell:
 
 ```sh
 ssh chunsik
-cd /home/ubuntu/services/beatit
-docker compose ps
-docker compose logs --tail 100 beatit
-docker compose exec beatit drum-score doctor
-docker compose restart beatit
+cd /home/ubuntu/services/beatit-multiuser
+beatit_compose() {
+  docker compose -p beatit-multiuser --env-file .env \
+    -f compose.yaml -f compose.mysql-tls.yaml "$@"
+}
+beatit_compose ps
+beatit_compose logs --tail 100 beatit
+beatit_compose exec beatit drum-score doctor
+beatit_compose exec beatit python -m transcription.data_admin probe
 ```
 
-Docker and Tailscale are enabled at boot. The container uses `unless-stopped`;
-after a deliberate `docker compose stop`, start it again with `docker compose up -d`.
-The HTTP health check probes `/api/jobs` every 30 seconds.
+Let active jobs finish before a planned restart. Keep the previous image and a
+combined database/object backup before updating. After preparing and validating a
+new image, use `beatit_compose up -d --no-build --wait`. Recheck authenticated
+history, media, edits and downloads: a healthy container establishes reachability,
+not successful inference or complete owner isolation. Docker's `unless-stopped`
+policy requires an explicit start after a deliberate stop.
 
-Before updating, let active jobs finish, retain the previous image, and back up the
-data volume and SQLite database. Keep protected copies of `.env`, the Compose files
-and deployment record with the backup. Then copy the new sources
-without local data, virtual environments, node_modules, or `.env`, and rebuild:
+See [backup and restore](multi-user-deployment.md#backup-and-restore) for commands
+that stop the correct project and run the installed data-admin module with a
+protected backup mount. SQL backups alone do not contain R2 media. Never point a
+legacy single-user image at the managed schema or expose its shared data volume
+through the public hostname.
 
-```sh
-docker tag beatit:local beatit:previous
-docker compose build
-docker compose up -d --wait
+## Google sign-in and migration evidence
+
+One real personal Google account completed consent, registered a profile, received
+a session cookie and loaded the browser workspace. UI logout returned HTTP 204 and
+cleared the workspace. Routine Google account-selection login then succeeded
+without repeating consent, and the user reopened saved history. The operator
+skipped the work-account profile; a second real Google login has not been verified. Two
+synthetic owners separately exercised 47 cross-owner/anonymous route assertions
+against the actual OCI/R2 backend, including range downloads, queue fairness,
+edits and empty-scratch recovery. Those tests do not substitute for a second
+Google-provider login.
+
+The operator explicitly assigned all seven completed legacy jobs to that signed-in
+personal account. The offline source backup is:
+
+```text
+/home/ubuntu/services/beatit/backups/issue7-20261109-multiuser/legacy-data.tar.gz
+224963486 bytes
+sha256 f7cb7a3b461d24dd8d155b44d6961676077061a10b28eafc5a6a7ea602ad9967
 ```
 
-To restore the previous image without rebuilding:
+The import preserved all seven result JSON values and 14 checked MusicXML/ZIP
+hashes; an immediate rerun skipped all seven. Import ran from a separate extracted
+copy. Correcting that copy's ownership did not modify the original data or backup.
+The user then deleted one imported job through the UI (HTTP 204), leaving six
+imported jobs. Do not rerun the import to recreate that deliberate deletion.
 
-```sh
-BEATIT_IMAGE=beatit:previous docker compose up -d --no-build --wait
-```
+The actual managed backup/restore drill restored two synthetic owners, two
+projects, three jobs, four revisions and 41 R2 objects into the then-empty dedicated
+database. All 41 object hashes and both owners' artifact access were checked, then
+the exact synthetic records and objects were removed. All 11 checked table counts
+returned to zero before real users or legacy imports were added.
 
-For an engine migration rollback, also restore the backed-up `.env` and its Compose
-file selection; restarting the previous image with Modal settings is not a complete
-rollback to the former Colab controller deployment.
+## Real browser transcription and scratch recovery
 
-After switching to Modal, `/api/system` must report `execution_backend=modal` and an
-available remote runtime. Verify a fresh upload through the private browser/API URL,
-then check the completed result's Modal/CUDA provenance, SVG preview, MusicXML/MIDI
-downloads, waveform and score layout. A healthy container alone is not sufficient.
-Confirm existing job IDs and artifact hashes are preserved, and that the remote
-GPU scales back to zero after processing.
+The new original eight-second `Issue7-owner-A-8s.wav` submitted through the signed-in
+browser completed on Modal with CUDA provenance. Reported processing time was
+56.9 seconds; the initial result showed 120 BPM, 4/4, five bars and 29 events. This
+is a short end-to-end functional check, not a transcription-accuracy benchmark.
 
-Stopping or recreating the container preserves both volumes. Do not use
-`docker compose down -v` unless you intend to erase uploaded files, results, job
-history, and downloaded models. Existing local Mac sessions are not copied by the
-source deployment commands.
+The UI Kick toggle, undo and redo were exercised. Score regeneration published
+30 events, and applying title/author metadata produced a third durable revision.
+The browser saved the 61,546-byte ZIP with SHA-256
+`160f72bd7754781deec1f5fd78b4d0a056bdaeaea94c15209c7e3648033c3ced`, matching
+the SQL artifact manifest exactly. ZIP integrity passed; its 30 events and
+MusicXML title were verified.
 
-## Deployment verification (2026-10-26)
+With zero active jobs, an idle worker slot and zero remote-call records, the
+multi-user service was stopped. Only the isolated `beatit-multiuser_data` scratch
+volume was cleared, from three top-level entries to zero. The container was then
+force-recreated from `d8b8d328b334` to `87e3b49b1fb1` using the same image and
+became healthy. The browser's auth cookie remained usable. The user manually
+reopened the saved job from history: 30 events, metadata and SVG were restored;
+audio ranges returned 206, and waveform/layout returned 200. Nine current artifact
+sizes and SHA-256 values matched the R2-backed manifests, and all three revisions
+remained in SQL.
 
-The ARM64 image was built on chunsik and passed its HTTP health check. The runtime
-reports PyTorch 2.8.0+cpu, FFmpeg, and Verovio. The application runs as UID 10001;
-the Docker CPU/memory limits and private-interface binding were inspected.
+During downtime, authentication fails closed and clears the workspace. This
+verification establishes reopening from saved history after recovery; it does not
+claim automatic restoration of the previously selected session. The final browser
+screenshot is retained privately in `work/issue7/live-restored-score.png`.
 
-A 12-second excerpt from the existing Wake test input completed the real Demucs,
-DrumSep, ADTOF, Beat This!, and engraving pipeline in 290.3 seconds. MusicXML, MIDI,
-SVG, JSON, ZIP integrity, waveform, and score-layout responses were checked. This
-is deployment validation, not a new transcription-accuracy evaluation or a
-full-length load test. CPU processing is slow on this host.
+The verified `dcef260` CI run passed 205 non-MySQL Python tests and 68 MySQL tests
+(273 total), plus 45 frontend unit tests and 51 Playwright tests. The CI and managed
+runtime checks establish different checkpoints; the second real Google account
+and provider-native backup retention remain unverified.
 
-After force-recreating the container, the completed job and downloaded artifact
-bytes were preserved. An edited score title was regenerated successfully. All
-three downloaded model groups were loaded with `HF_HUB_OFFLINE=1`, confirming the
-cache survives recreation. Nine API tests also passed locally.
+## Stopped legacy installation
 
-The verification session is named `deployment-check-wake-12s.wav` and its score
-title is `배포 검증 · Wake 12초`. No existing Mac sessions were migrated.
+The former `beatit-beatit-1` container in `/home/ubuntu/services/beatit` is now
+`exited`. This was a reversible stop of the private port-18000 service. Its image
+`beatit:5a01d492327e` remains tagged `beatit:pre-multiuser-20261109`; the original
+volumes, protected environment and offline backup are retained. The new
+`beatit-multiuser` container remains healthy.
 
-Multi-user authentication, owner isolation, and replacing SQLite/JSON project
-persistence are tracked in [issue #7](https://github.com/comfuture/beatit/issues/7).
-The current service remains a shared single-user workspace.
+Restarting the old image restores a shared single-user workspace, not
+authenticated access to the managed projects. Keep it private and preserve its
+offline source backup; do not point it at the new MySQL schema.
 
-### CPU performance probe
+## Historical CPU deployment verification (2026-10-26)
 
-Under the same 2-CPU container limit, one real DrumSep forward pass over the same
-11.877-second chunk took 45.419 seconds with 4 PyTorch threads and 45.543 seconds
-with 2 threads. The two output tensors had a maximum absolute difference of zero.
-This was one pass per configuration, not a statistical performance comparison;
-there was no observed speed improvement from reducing threads. The pipeline now
-respects the configured thread limit instead of unconditionally selecting four.
+This section describes the former single-user image and its filesystem persistence.
+It is not evidence for the current authentication or managed-storage behavior.
 
-The separator advances by 2.969 seconds per chunk (overlap 4), including its current
-edge padding. Its code schedules 5 chunks for 12 seconds, 87 for 4 minutes, and 108
-for 5 minutes. At the measured per-chunk time, DrumSep alone would take roughly
-66–82 minutes for a 4–5 minute song; Demucs and other stages add time. These are
-code-derived estimates, not full-song measurements. Practical interactive use
-needs a separate performance decision, such as GPU inference or a lighter mode
-whose transcription quality is evaluated against the current pipeline.
+The ARM64 container ran as UID 10001 with PyTorch 2.8.0+cpu, FFmpeg and Verovio under
+a 2-CPU/12-GiB limit. A 12-second Wake excerpt completed Demucs, DrumSep, ADTOF,
+Beat This! and engraving in 290.3 seconds. MusicXML, MIDI, SVG, JSON, ZIP, waveform
+and score-layout responses were checked. Container recreation preserved that
+legacy volume's completed job/artifact bytes; title regeneration and offline model
+cache loading also passed. This was one deployment qualification, not a new
+accuracy evaluation or a full-song load test.
+
+One DrumSep forward pass over an 11.877-second chunk took 45.419 seconds with four
+PyTorch threads and 45.543 seconds with two; the output tensors matched exactly.
+There was one observation per configuration, with no measured speed improvement.
+The code-derived 66–82 minute DrumSep estimate for a four-to-five-minute song did
+not measure a full-song run. The deployment now uses Modal GPU for inference; see
+[the Modal qualification](benchmarks/modal-2026-11-09.md) for its separate evidence.
