@@ -1,8 +1,10 @@
 # chunsik deployment
 
 Beatit runs in `/home/ubuntu/services/beatit` on chunsik with Docker Compose.
-The server uses ARM64 CPU inference. The frontend is built into the Python image,
-so there is one application container and one job queue.
+The ARM64 host runs the web service and local score editing. This deployment selects
+the private Modal GPU engine for inference; local CPU/Mac and Colab remain supported
+service configurations. The frontend is built into the Python image, with one
+application container and one job queue.
 
 - Private URL: <http://chunsik.emperor-micro.ts.net:18000>
 - Private IPv4 URL: <http://100.71.242.57:18000>
@@ -11,6 +13,28 @@ so there is one application container and one job queue.
 - Model and compilation caches: Docker volume `beatit_model-cache`
 - Runtime limits: 2 CPUs, 12 GiB RAM; numerical library thread counts: 2
 - Renderer: Verovio (SVG and MusicXML; MuseScore is not installed for PDF)
+
+## Modal configuration
+
+Use `COMPOSE_FILE=compose.yaml:compose.modal.yaml` and
+`BEATIT_EXECUTION_BACKEND=modal` in the protected server `.env`. Set
+`BEATIT_MODAL_APP=beatit`, `MODAL_ENVIRONMENT=main`, and the published
+`BEATIT_MODAL_IMAGE` tag documented in [Modal deployment](modal-deployment.md).
+The named image is built/published independently on the operator's machine; the
+chunsik application image retains the local backend dependencies for score edits
+and an explicitly configured local fallback.
+
+Store the token ID and secret in separate protected files and configure
+`BEATIT_MODAL_TOKEN_ID_FILE` / `BEATIT_MODAL_TOKEN_SECRET_FILE` with their host paths.
+For file-backed Docker secrets, these files must be readable by container UID 10001;
+setting their owner to `10001:10001` and mode `0400` is sufficient. Keep their parent
+directory private. Do not print token values or include them in deployment records.
+
+When moving from the former Colab deployment, check that no job/runtime is active,
+then stop `colab-manager` and `colab-controller` using their existing Compose files.
+Keep their containers, authentication volumes, images and source configuration for
+rollback. Do not remove the data or model-cache volumes. Deploy the application with
+the base and Modal secret overlay, rather than continuing to include Colab overlays.
 
 Connect from a device on the same Tailscale network. The listener is bound only to
 the server's Tailscale IPv4. For SSH access without a local Tailscale client:
@@ -39,7 +63,8 @@ after a deliberate `docker compose stop`, start it again with `docker compose up
 The HTTP health check probes `/api/jobs` every 30 seconds.
 
 Before updating, let active jobs finish, retain the previous image, and back up the
-data volume. Keep a local copy of `.env` with the backup. Then copy the new sources
+data volume and SQLite database. Keep protected copies of `.env`, the Compose files
+and deployment record with the backup. Then copy the new sources
 without local data, virtual environments, node_modules, or `.env`, and rebuild:
 
 ```sh
@@ -53,6 +78,17 @@ To restore the previous image without rebuilding:
 ```sh
 BEATIT_IMAGE=beatit:previous docker compose up -d --no-build --wait
 ```
+
+For an engine migration rollback, also restore the backed-up `.env` and its Compose
+file selection; restarting the previous image with Modal settings is not a complete
+rollback to the former Colab controller deployment.
+
+After switching to Modal, `/api/system` must report `execution_backend=modal` and an
+available remote runtime. Verify a fresh upload through the private browser/API URL,
+then check the completed result's Modal/CUDA provenance, SVG preview, MusicXML/MIDI
+downloads, waveform and score layout. A healthy container alone is not sufficient.
+Confirm existing job IDs and artifact hashes are preserved, and that the remote
+GPU scales back to zero after processing.
 
 Stopping or recreating the container preserves both volumes. Do not use
 `docker compose down -v` unless you intend to erase uploaded files, results, job

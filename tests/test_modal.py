@@ -290,6 +290,36 @@ def test_interrupted_call_is_cancelled_from_persisted_record(tmp_path, monkeypat
     assert not record.exists()
 
 
+def test_failed_cancel_remains_recoverable_after_job_deletion(rpc, monkeypatch):
+    from transcription.store import JobStore
+
+    rpc.inference.result = RuntimeError("Connection lost")
+
+    def failed_cancel(**kwargs):
+        raise ConnectionError("Cancellation could not reach Modal")
+
+    rpc.inference.cancel = failed_cancel
+    with pytest.raises(RuntimeError, match="Connection lost"):
+        modal_worker.run(rpc.directory)
+    record = modal_worker.call_record(rpc.directory)
+    assert record.is_file()
+    store = JobStore(rpc.directory.parent)
+    store.add(rpc.directory.name, "input.wav")
+    store.update(rpc.directory.name, "failed")
+    store.delete(rpc.directory.name)
+    assert not rpc.directory.exists() and record.is_file()
+    recovered = []
+    monkeypatch.setattr(
+        modal_worker.modal.FunctionCall,
+        "from_id",
+        lambda call_id: SimpleNamespace(cancel=lambda **kwargs: recovered.append(call_id)),
+    )
+    store.start()
+    store.stop()
+    assert recovered == ["fc-test"]
+    assert not record.exists()
+
+
 def test_result_download_has_a_compressed_size_limit(tmp_path, monkeypatch):
     monkeypatch.setattr(modal_worker, "MAX_RESULT_BYTES", 3)
     with pytest.raises(ValueError, match="size limit"):
