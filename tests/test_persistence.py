@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -118,6 +119,60 @@ def test_competing_claims_enforce_global_worker_limit(persistence_store):
     winner = next(claim for claim in claims if claim)
     assert store.heartbeat(winner["id"], winner["claim_token"])
     assert not store.heartbeat(winner["id"], "wrong-token")
+
+
+def test_claim_sorts_scalar_candidates_with_large_retained_result(persistence_store, monkeypatch):
+    store = persistence_store
+    first = enqueue(store)
+    second = enqueue(store, "owner-b")
+    # Regeneration retains the published score. Even one such JSON value is
+    # larger than a normal MySQL sort buffer and must not enter the queue sort.
+    retained = {"generation": "published", "notes": "x" * (2 * 1024 * 1024)}
+    with store.connect() as connection:
+        connection.execute("UPDATE beatit.jobs SET result=%s", (json.dumps(retained),))
+
+    original_connect = store.connect
+    sorted_rows = []
+
+    @contextmanager
+    def limited_sort_connection():
+        with original_connect() as connection:
+            connection.execute("SET SESSION sort_buffer_size=32768")
+            execute = connection.execute
+
+            def record(query, params=None):
+                result = execute(query, params)
+                if "ORDER BY s.last_served" in query:
+                    sorted_rows.extend(result.rows)
+                return result
+
+            monkeypatch.setattr(connection, "execute", record)
+            yield connection
+
+    monkeypatch.setattr(store, "connect", limited_sort_connection)
+    claim = store.claim()
+    assert claim["id"] == first
+    assert claim["result"] == retained
+    store.release_claim(first, claim["claim_token"])
+    next_claim = store.claim()
+    assert next_claim["id"] == second
+    assert next_claim["result"] == retained
+    assert sorted_rows == [
+        {"id": first, "owner_id": "owner-a"},
+        {"id": second, "owner_id": "owner-b"},
+    ]
+
+
+def test_claim_skips_job_locked_by_another_transaction(persistence_store):
+    store = persistence_store
+    first = enqueue(store)
+    second = enqueue(store, "owner-b")
+    with store.connect() as connection:
+        connection.execute("SELECT id FROM beatit.jobs WHERE id=%s FOR UPDATE", (first,))
+        claim = store.claim()
+    assert claim["id"] == second
+    assert store.get(first)["status"] == "queued"
+    assert store.heartbeat(second, claim["claim_token"])
 
 
 def test_fair_owner_rotation_and_per_owner_admission_limit(persistence_store):

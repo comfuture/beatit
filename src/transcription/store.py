@@ -706,16 +706,24 @@ class JobStore:
                         slot["token"],
                     ),
                 )
-            row = connection.execute(
-                """SELECT j.* FROM beatit.jobs j JOIN beatit.owner_schedule s ON s.owner_id=j.owner_id
+            candidate = connection.execute(
+                """SELECT j.id,j.owner_id FROM beatit.jobs j
+                   JOIN beatit.owner_schedule s ON s.owner_id=j.owner_id
                    WHERE j.status='queued' ORDER BY s.last_served,j.queued_at,j.id
                    LIMIT 1 FOR UPDATE SKIP LOCKED"""
             ).fetchone()
-            if row is None:
+            if candidate is None:
                 connection.execute(
                     "UPDATE beatit.worker_slot SET token=NULL,job_id=NULL,lease_until=0 WHERE id=1"
                 )
                 return None
+            # Sorting full rows also sorts retained result/payload JSON during
+            # score regeneration and can exhaust MySQL's sort buffer. The
+            # candidate and owner stay locked while this primary-key read loads
+            # the selected job, within the same worker-slot transaction.
+            row = connection.execute(
+                "SELECT * FROM beatit.jobs WHERE id=%s FOR UPDATE", (candidate["id"],)
+            ).fetchone()
             connection.execute(
                 """UPDATE beatit.jobs SET status='running',claim_token=%s,lease_until=%s,
                    attempt=attempt+1,updated=%s WHERE id=%s""",
