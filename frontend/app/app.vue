@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { SplitterItem } from "@nuxt/ui";
 import { statusLabels } from "~/types/studio";
-import { colabConnectionUnavailable, isColabExecution, runtimeStatus } from "~/utils/execution";
+import { connectionUnavailable, isColabExecution, isRemoteExecution, runtimeStatus } from "~/utils/execution";
 
 const studio = useStudio();
 const {
@@ -29,11 +29,14 @@ const {
   redoStack,
 } = studio;
 const colabExecution = computed(() => isColabExecution(system.value));
+const modalExecution = computed(() => system.value?.execution_backend === "modal");
+const remoteExecution = computed(() => isRemoteExecution(system.value));
 const runtimeDescription = computed(() => runtimeStatus(system.value));
 const runtimeConnected = computed(() => {
+  if (modalExecution.value) return !connectionUnavailable(system.value);
   if (!colabExecution.value) return true;
   const runtime = system.value?.remote_runtime;
-  return !colabConnectionUnavailable(system.value) && !!runtime?.prepared &&
+  return !connectionUnavailable(system.value) && !!runtime?.prepared &&
     ["ready", "running", "idle"].includes(runtime.state);
 });
 const sidebarOpen = ref(true);
@@ -251,7 +254,7 @@ onBeforeUnmount(() => {
             <span class="brand-mark"><UIcon name="i-lucide-audio-lines" /></span
             ><template v-if="state === 'expanded'"
               ><strong>beatit<span>STUDIO</span></strong
-              ><span class="brand-version">{{ colabExecution ? "COLAB" : "LOCAL" }}</span></template
+              ><span class="brand-version">{{ modalExecution ? "MODAL" : colabExecution ? "COLAB" : "LOCAL" }}</span></template
             >
           </div></template
         >
@@ -313,8 +316,8 @@ onBeforeUnmount(() => {
             <div v-if="state === 'expanded'">
               <strong>{{
                 online
-                  ? colabExecution
-                    ? system?.execution_label || "Google Colab GPU"
+                  ? remoteExecution
+                    ? system?.execution_label || (modalExecution ? "Modal GPU" : "Google Colab GPU")
                     : "로컬 엔진 연결됨"
                   : "엔진 연결 확인"
               }}</strong
@@ -328,7 +331,7 @@ onBeforeUnmount(() => {
                       : "렌더러 확인"
                 }}</small
               >
-              <small v-if="colabExecution" role="status">{{ runtimeDescription }}</small>
+              <small v-if="remoteExecution" role="status">{{ runtimeDescription }}</small>
             </div>
             <UTooltip text="워크스페이스 도움말"
               ><UButton
@@ -554,6 +557,7 @@ onBeforeUnmount(() => {
                   <ProcessPanel
                     :job="current"
                     :colab="colabExecution"
+                    :modal="modalExecution"
                     :disabled="mutating"
                     @cancel="studio.action('cancel')"
                     @retry="studio.action('retry')"
@@ -632,6 +636,7 @@ onBeforeUnmount(() => {
                     v-else-if="!current"
                     :job="null"
                     :colab="colabExecution"
+                    :modal="modalExecution"
                     compact
                     :uploading="uploading"
                     :upload-progress="uploadProgress"
@@ -784,6 +789,7 @@ onBeforeUnmount(() => {
           v-else
           :job="current"
           :colab="colabExecution"
+          :modal="modalExecution"
           :uploading="uploading"
           :upload-progress="uploadProgress"
           :disabled="mutating"

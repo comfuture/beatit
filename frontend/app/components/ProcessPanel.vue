@@ -8,6 +8,7 @@ const props = defineProps<{
   compact?: boolean;
   disabled?: boolean;
   colab?: boolean;
+  modal?: boolean;
 }>();
 defineEmits<{ cancel: []; retry: [] }>();
 const preparingRemote = computed(() =>
@@ -15,7 +16,7 @@ const preparingRemote = computed(() =>
 );
 const stages = computed(() => [
   {
-    label: preparingRemote.value ? "Colab GPU 준비" : "오디오 준비",
+    label: preparingRemote.value ? `${props.modal ? 'Modal' : 'Colab'} GPU 준비` : "오디오 준비",
     detail: preparingRemote.value ? "GPU 연결 · 실행 환경 및 오디오 준비" : "원본에서 오디오 추출",
     icon: "i-lucide-file-audio",
     stages: ["allocating", "preparing", "uploading", "converting"],
@@ -123,7 +124,7 @@ const percent = computed(() =>
       <small>{{
         job?.progress.elapsed_seconds
           ? `${Math.round(job.progress.elapsed_seconds)}초 경과`
-          : colab ? "Colab GPU 연결 후 분석합니다" : "첫 실행 시 모델을 다운로드합니다"
+          : modal ? "Modal GPU에서 분석합니다" : colab ? "Colab GPU 연결 후 분석합니다" : "첫 실행 시 모델을 다운로드합니다"
       }}</small>
       <UButton
         v-if="active"

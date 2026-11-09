@@ -25,6 +25,7 @@ dependencies = [
   "huggingface-hub>=0.30,<3",
   "verovio>=5.6,<7",
   "pypdf>=5,<7",
+  "modal>=1.2,<2",
 ]
 
 [project.optional-dependencies]

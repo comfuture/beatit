@@ -1,6 +1,6 @@
 # Drum Score
 
-A local web app that transcribes drums from audio or video into editable **MusicXML**,
+A web app that transcribes drums from audio or video into editable **MusicXML**,
 printable **SVG**, and **A4 PDF** when MuseScore is installed. Drop a file into the
 browser, start transcription, then preview, adjust, and download the score.
 MIDI, detected onsets, a separated drum track, and per-instrument kit stems are also
@@ -39,8 +39,12 @@ DrumSep model splits the drums into kick, snare, toms, hi-hat, and cymbal stems.
 the pinned PyTorch Frame_RNN port, runs on the drum stem and each kit stem; their scores
 are averaged per class. Hi-hat decay marks open hi-hats. Beat This! sets tempo, beat
 phase, and the first downbeat.
-Verovio provides SVG output when MuseScore is unavailable. Processing stays on your
-host; the first run may download model weights.
+Verovio provides SVG output when MuseScore is unavailable. Processing defaults to
+the local host when no engine is configured. This deployment selects Modal GPU with
+a reusable dependency image and model cache. Local Mac/CPU/CUDA and Colab engines
+remain available through service configuration; no user-facing engine
+selector is exposed. See [Modal setup and cost decision](docs/modal-deployment.md)
+for deployment and `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` configuration.
 
 ## Install and run
 
@@ -61,7 +65,7 @@ npm --prefix frontend run build
 brew install uv ffmpeg
 brew install --cask musescore  # optional: SVG and PDF engraving
 uv sync --frozen
-uv run drum-score serve
+uv run drum-score serve --engine local
 ```
 
 ### Linux CPU
@@ -71,7 +75,7 @@ Install uv using the link above, then:
 ```sh
 sudo apt-get install ffmpeg git
 uv sync --frozen --extra cpu
-uv run --extra cpu drum-score serve
+uv run --extra cpu drum-score serve --engine local
 ```
 
 Linux ARM64 also needs a Rust toolchain and `build-essential pkg-config libopus-dev`
@@ -87,6 +91,12 @@ Jobs and media are saved in the ignored `data/` directory. Run
 `uv run drum-score doctor` to check the host, or `uv run drum-score download-model`
 to fetch the Demucs, DrumSep, and Beat This! weights before processing. Use the selected
 extra on Linux.
+
+For Modal, deploy `scripts/modal_app.py` and configure credentials as described in
+the [deployment guide](docs/modal-deployment.md), then launch `uv run drum-score serve --engine modal`.
+`DRUM_EXECUTION_BACKEND=modal|local|colab` or `serve --engine ...` selects the engine
+when starting the service. Docker uses `BEATIT_EXECUTION_BACKEND`, falling back to
+local when unset; `deploy.env.example` explicitly selects Modal for this deployment.
 
 ## Limitations and development
 

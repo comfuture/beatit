@@ -85,7 +85,7 @@ export interface Job {
   request?: { options: Options };
 }
 export interface SystemInfo {
-  execution_backend?: "local" | "colab";
+  execution_backend?: "modal" | "local" | "colab";
   execution_label?: string;
   remote_runtime?: {
     state:

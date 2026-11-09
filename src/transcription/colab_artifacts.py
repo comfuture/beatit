@@ -1,4 +1,4 @@
-"""Bounded, allowlisted transfer of inference files across the Colab boundary."""
+"""Bounded, allowlisted inference artifacts shared by Colab and Modal."""
 
 import json
 import os
@@ -81,7 +81,7 @@ def pack_output(directory: Path, destination: Path):
                 archive.write(path, generation + "/" + path.name)
 
 
-def import_output(archive_path: Path, directory: Path, provenance: dict):
+def import_output(archive_path: Path, directory: Path, provenance: dict, *, backend="colab"):
     """Validate everything before replacing media; publish the result pointer last."""
     if not directory.is_dir():
         raise FileNotFoundError("The job was deleted")
@@ -95,7 +95,7 @@ def import_output(archive_path: Path, directory: Path, provenance: dict):
             if sum(info.file_size for info in infos) > MAX_RESULT_BYTES:
                 raise ValueError("Result archive exceeds its size limit")
             if not {"result.json", "events.json", "analysis.json", *MEDIA} <= set(names):
-                raise ValueError("Incomplete Colab result")
+                raise ValueError("Incomplete remote result")
             if archive.getinfo("result.json").file_size > 32 * 1024**2:
                 raise ValueError("Result metadata exceeds its size limit")
             result = json.loads(archive.read("result.json"))
@@ -140,10 +140,10 @@ def import_output(archive_path: Path, directory: Path, provenance: dict):
                     raise ValueError("Corrupt score bundle")
             analysis = json.loads((staged / "analysis.json").read_text())
             if analysis.get("transcription_device") != "cuda":
-                raise ValueError("Colab did not use CUDA")
-        result["execution_backend"] = "colab"
+                raise ValueError("Remote inference did not use CUDA")
+        result["execution_backend"] = backend
         result["execution_runtime"] = provenance
-        analysis.update(execution_backend="colab", execution_runtime=provenance)
+        analysis.update(execution_backend=backend, execution_runtime=provenance)
         save_json(staged / "analysis.json", analysis)
         save_json(staged / "result.json", result)
         if (directory / generation).exists():

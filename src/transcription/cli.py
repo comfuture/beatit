@@ -10,6 +10,7 @@ def main():
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
     serve.add_argument("--data-dir", type=Path, default=None)
+    serve.add_argument("--engine", choices=["modal", "local", "colab"], default=None)
     sub.add_parser("doctor", help="Report available inference devices and tools")
     warmup = sub.add_parser("download-model", help="Download model checkpoints before processing")
     warmup.add_argument(
@@ -18,6 +19,11 @@ def main():
     args = parser.parse_args()
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     if args.command == "serve":
+        if args.engine:
+            os.environ["DRUM_EXECUTION_BACKEND"] = args.engine
+        from .execution import default_engine
+
+        default_engine()  # Fail before starting a service with an invalid configuration.
         import uvicorn
 
         from .app import create_app

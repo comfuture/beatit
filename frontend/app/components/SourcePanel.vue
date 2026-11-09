@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Job, SystemInfo } from "~/types/studio";
-import { colabConnectionUnavailable, isColabExecution, runtimeStatus } from "~/utils/execution";
+import { connectionUnavailable, isRemoteExecution, runtimeStatus } from "~/utils/execution";
 const props = defineProps<{
   file: File | null;
   system: SystemInfo | null;
@@ -19,7 +19,7 @@ const emit = defineEmits<{
 }>();
 const input = useTemplateRef("input");
 const dragging = ref(false);
-const colabExecution = computed(() => isColabExecution(props.system));
+const remoteExecution = computed(() => isRemoteExecution(props.system));
 function drop(event: DragEvent) {
   dragging.value = false;
   if (props.busy) return;
@@ -101,19 +101,19 @@ function select(event: Event) {
         label="분석 시작"
         icon="i-lucide-play"
         :loading="uploading"
-        :disabled="!file || busy || !system?.ffmpeg || colabConnectionUnavailable(system)"
+        :disabled="!file || busy || !system?.ffmpeg || connectionUnavailable(system)"
         block
         size="lg"
         @click="$emit('upload')"
       />
       <div class="source-notes">
-        <UIcon :name="colabExecution ? 'i-lucide-cloud' : 'i-lucide-hard-drive'" />
+        <UIcon :name="remoteExecution ? 'i-lucide-cloud' : 'i-lucide-hard-drive'" />
         <div>
-          <p>{{ colabExecution
-            ? "업로드한 오디오는 Google Colab GPU에서 분석합니다. 원본과 결과는 서버에 보관됩니다."
+          <p>{{ remoteExecution
+            ? `업로드한 오디오는 ${system?.execution_label}에서 분석합니다. 원본과 결과는 서버에 보관됩니다.`
             : "오디오와 분석 결과는 실행 중인 호스트에 저장됩니다."
           }}</p>
-          <p v-if="colabExecution" role="status">{{ runtimeStatus(system) }}</p>
+          <p v-if="remoteExecution" role="status">{{ runtimeStatus(system) }}</p>
         </div>
       </div>
       <div class="workflow-overview">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SystemInfo } from "../app/types/studio";
-import { colabConnectionUnavailable, isColabExecution, runtimeStatus } from "../app/utils/execution";
+import { colabConnectionUnavailable, connectionUnavailable, isColabExecution, isRemoteExecution, runtimeStatus } from "../app/utils/execution";
 
 const system: SystemInfo = {
   devices: ["cuda"], default_device: "cuda", ffmpeg: true, musescore: false,
@@ -24,6 +24,25 @@ const serverColab = (
 });
 
 describe("execution location and runtime readiness", () => {
+  it("allows a scale-to-zero Modal engine without claiming a warm GPU", () => {
+    const modal: SystemInfo = {
+      ...system, execution_backend: "modal",
+      remote_runtime: {
+        state: "idle", prepared: false, accelerator: "T4", idle_timeout_seconds: 2,
+        allocation_mode: "server", can_allocate: true,
+      },
+    };
+    expect(isRemoteExecution(modal)).toBe(true);
+    expect(isColabExecution(modal)).toBe(false);
+    expect(connectionUnavailable(modal)).toBe(false);
+    expect(runtimeStatus(modal)).toBe("분석 시 Modal GPU 자동 시작");
+    expect(connectionUnavailable({ ...modal, remote_runtime: undefined })).toBe(true);
+    const offline = {
+      ...modal, remote_runtime: { ...modal.remote_runtime!, can_allocate: false, manager_error: "Modal 인증 필요" },
+    };
+    expect(connectionUnavailable(offline)).toBe(true);
+    expect(runtimeStatus(offline)).toBe("Modal 인증 필요");
+  });
   it("keeps existing local system responses compatible", () => {
     expect(isColabExecution(null)).toBe(false);
     expect(isColabExecution(system)).toBe(false);
