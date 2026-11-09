@@ -558,14 +558,26 @@ class JobStore:
         return destination
 
     def revise(
-        self, identifier, options, events=None, metadata=None, beat_review=None, owner_id=None
+        self,
+        identifier,
+        options,
+        events=None,
+        metadata=None,
+        beat_review=None,
+        owner_id=None,
+        preserve_events=False,
+        source_generation=None,
+        client_edit_id=None,
     ):
         with self.connect() as connection:
-            self._admit(connection, owner_id or self._owned(connection, identifier)["owner_id"])
+            initial = self._owned(connection, identifier, owner_id)
+            self._admit(connection, initial["owner_id"])
             row = self._owned(connection, identifier, owner_id, lock=True)
             if row["status"] not in TERMINAL or row["result"] is None:
                 raise ValueError("완료된 악보만 수정할 수 있습니다.")
             saved = row["result"]
+            if source_generation is not None and source_generation != saved["generation"]:
+                raise ValueError("악보가 변경되었습니다. 새 악보를 불러온 뒤 다시 적용하세요.")
             request = {
                 "filename": row["filename"],
                 "options": options if options is not None else saved["options"],
@@ -578,6 +590,12 @@ class JobStore:
                     "metadata", ScoreMetadata.for_filename(row["filename"]).model_dump()
                 ),
             }
+            if preserve_events:
+                request.update(preserve_events=True, source_generation=saved["generation"])
+            elif source_generation is not None:
+                request["source_generation"] = source_generation
+            if client_edit_id is not None:
+                request["client_edit_id"] = client_edit_id
             if options is None:
                 request.update(metadata_only=True, source_generation=saved["generation"])
             self._enqueue(connection, identifier, request, "악보 재생성 대기 중")

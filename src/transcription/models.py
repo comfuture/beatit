@@ -86,3 +86,6 @@ class Revision(BaseModel):
     events: list[Event] | None = Field(default=None, max_length=100000)
     metadata: ScoreMetadata | None = None
     beat_review: BeatReview | None = None
+    preserve_events: bool = False
+    source_generation: str | None = Field(default=None, min_length=1, max_length=128)
+    client_edit_id: str | None = Field(default=None, min_length=1, max_length=64)
