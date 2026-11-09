@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SignedInUser } from "~/types/auth";
 import { googleLoginPath } from "~/utils/sessionLocation";
+import { isTransientReadError } from "~/utils/connection";
 
 const user = shallowRef<SignedInUser | null>(null);
 const checking = ref(true);
@@ -9,6 +10,14 @@ const loginPath = computed(() => googleLoginPath(locationPath.value));
 function updateLocation() { locationPath.value = window.location.pathname; }
 const signingOut = ref(false);
 const authError = ref("");
+const reconnecting = ref(false);
+const connectionNotice = ref("");
+let reconnectStarted = 0;
+function resetReconnect() {
+  reconnecting.value = false;
+  connectionNotice.value = "";
+  reconnectStarted = 0;
+}
 type LogoutNotice = {
   ownerId: string;
   nonce: string;
@@ -40,27 +49,54 @@ async function checkSession() {
       cache: "no-store",
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(10000)]),
     });
-    if (!response.ok) throw new Error("로그인 상태를 확인할 수 없습니다. 잠시 후 다시 시도하세요.");
+    if (disposed || request.signal.aborted || token !== revision) return;
+    if (response.status === 401) {
+      clearWorkspace();
+      resetReconnect();
+      authError.value = "로그인이 만료되었습니다. Google 계정으로 다시 로그인하세요.";
+      checking.value = false;
+      return;
+    }
+    if (!response.ok) throw Object.assign(new Error("Authentication check failed"), { status: response.status });
     const data: { user: SignedInUser | null } = await response.json();
     if (disposed || request.signal.aborted || token !== revision) return;
-    if (data.user && (typeof data.user.id !== "string" || !data.user.id))
-      throw new Error("로그인 응답을 확인할 수 없습니다.");
-    // The keyed workspace unmounts on account changes, releasing editor and media.
-    user.value = data.user;
-    authError.value = "";
+    if (data.user !== null && (!data.user || typeof data.user.id !== "string" || !data.user.id))
+      throw Object.assign(new Error("Invalid authentication response"), { status: 400 });
+    resetReconnect();
+    if (data.user) {
+      // Only a successful server response can establish or change a principal.
+      user.value = data.user;
+      authError.value = "";
+    } else {
+      const wasSignedIn = !!user.value;
+      clearWorkspace();
+      if (wasSignedIn)
+        authError.value = "로그인이 만료되었습니다. Google 계정으로 다시 로그인하세요.";
+    }
+    checking.value = false;
   } catch (reason) {
     if (disposed || request.signal.aborted || token !== revision) return;
-    clearWorkspace();
-    authError.value = reason instanceof Error ? reason.message : String(reason);
-  } finally {
-    if (!disposed && token === revision && !signingOut.value) {
+    if (isTransientReadError(reason)) {
+      // Keep an already verified workspace and its draft. Every data request
+      // continues to authenticate at the server; an unknown user stays gated.
+      reconnecting.value = true;
+      reconnectStarted ||= Date.now();
+      if (Date.now() - reconnectStarted >= 4000)
+        connectionNotice.value = "서버에 다시 연결 중…";
+    } else {
+      clearWorkspace();
+      resetReconnect();
+      authError.value = "로그인 응답을 확인할 수 없습니다. 다시 로그인하세요.";
       checking.value = false;
-      timer = setTimeout(checkSession, 1800);
     }
+  } finally {
+    if (!disposed && token === revision && !signingOut.value && !blockedLogout.value)
+      timer = setTimeout(checkSession, 1800);
   }
 }
 function expireSession() {
   if (blockedLogout.value) return;
+  resetReconnect();
   revision++;
   pending?.abort();
   clearTimeout(timer);
@@ -70,6 +106,7 @@ function expireSession() {
   timer = setTimeout(checkSession, 1800);
 }
 function suspendSession() {
+  resetReconnect();
   revision++;
   pending?.abort();
   clearTimeout(timer);
@@ -179,18 +216,18 @@ onBeforeUnmount(() => {
       @logout="logout"
       @unauthorized="expireSession"
     />
-    <main v-else class="min-h-dvh bg-default flex items-center justify-center px-6 py-12">
+    <p v-if="user && connectionNotice" class="fixed top-2 left-1/2 -translate-x-1/2 z-50 rounded bg-muted px-3 py-1 text-xs text-muted" role="status">{{ connectionNotice }}</p>
+    <main v-if="!user" class="min-h-dvh bg-default flex items-center justify-center px-6 py-12">
       <UCard class="w-full max-w-md" :ui="{ body: 'p-8 sm:p-10' }">
         <div class="space-y-6 text-center">
           <UIcon name="i-lucide-audio-lines" class="size-10 text-primary" />
-          <div class="space-y-3">
-            <p class="text-xs tracking-[0.2em] text-muted">BEATIT STUDIO</p>
-            <h1 class="text-2xl font-semibold text-highlighted">내 드럼 악보 작업실</h1>
-            <p class="text-sm leading-6 text-muted">오디오를 드럼 악보로 만들고, 원음과 비교하며 다듬으세요. Google 계정으로 나만의 프로젝트를 저장하고 이어서 작업할 수 있습니다.</p>
-          </div>
-          <div v-if="checking" role="status" class="flex items-center justify-center gap-2 text-sm text-muted">
-            <UIcon name="i-lucide-loader-circle" class="animate-spin" /> 로그인 확인 중
-          </div>
+          <h1 class="text-2xl font-semibold text-highlighted">Beatit</h1>
+          <template v-if="checking">
+            <div role="status" class="flex items-center justify-center gap-2 text-sm text-muted">
+              <UIcon name="i-lucide-loader-circle" class="animate-spin" /> {{ reconnecting ? '서버에 연결 중…' : '로그인 확인 중' }}
+            </div>
+            <UButton v-if="reconnecting" label="다시 연결" variant="ghost" color="neutral" size="sm" @click="checkSession" />
+          </template>
           <template v-else>
             <UAlert v-if="authError" :title="authError" color="error" variant="soft" />
             <UButton
@@ -206,7 +243,7 @@ onBeforeUnmount(() => {
               <UIcon name="i-lucide-loader-circle" class="animate-spin" /> 로그아웃 중
             </div>
             <UButton
-              label="Google로 시작하기"
+              label="Google로 로그인"
               icon="i-lucide-log-in"
               :href="loginPath"
               external
@@ -214,7 +251,6 @@ onBeforeUnmount(() => {
               block
               :disabled="logoutPending"
             />
-            <p class="text-xs leading-5 text-dimmed">처음 로그인하면 계정이 만들어집니다.<br>프로젝트와 파일은 내 계정에서만 볼 수 있습니다.</p>
           </template>
         </div>
       </UCard>

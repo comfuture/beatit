@@ -81,7 +81,7 @@ test("signed-out visitors see Google signup and never request project history", 
   const api = await accountApi(page, null);
   await page.addInitScript(() => localStorage.setItem("beatit-session", "legacy-unowned-id"));
   await page.goto("/");
-  await expect(page.getByRole("link", { name: "Google로 시작하기" })).toHaveAttribute("href", "/api/auth/google");
+  await expect(page.getByRole("link", { name: "Google로 로그인" })).toHaveAttribute("href", "/api/auth/google");
   await expect(page.locator(".studio-shell")).toHaveCount(0);
   expect(api.historyRequests()).toBe(0);
   expect(await page.evaluate(() => localStorage.getItem("beatit-session"))).toBeNull();
@@ -106,7 +106,7 @@ test("separate account contexts retain only their own selection and logout relea
     await pageA.reload();
     await expect(pageA.locator(".header-filename")).toHaveText("A private.wav");
     await pageA.getByRole("button", { name: "로그아웃", exact: true }).click();
-    await expect(pageA.getByRole("link", { name: "Google로 시작하기" })).toBeVisible();
+    await expect(pageA.getByRole("link", { name: "Google로 로그인" })).toBeVisible();
     await expect(pageA.locator("audio, .audio-timeline, .beat-editor, .studio-shell")).toHaveCount(0);
     expect(await pageA.evaluate(() => localStorage.getItem("beatit-session:A"))).toBeNull();
     await expect(pageB.locator(".header-filename")).toHaveText("B private.wav");
@@ -149,7 +149,7 @@ test("an unauthorized project response immediately closes the private workspace"
   await chooseSession(page, "A");
   await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
   api.expire();
-  await expect(page.getByRole("link", { name: "Google로 시작하기" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Google로 로그인" })).toBeVisible();
   await expect(page.locator("audio, .studio-shell")).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("beatit-session:A"))).toBeNull();
 });
@@ -184,10 +184,10 @@ test("a pending logout keeps a second tab signed out through polling and focus",
     await expect(second.locator(".studio-shell, audio")).toHaveCount(0);
     await expect(second.getByRole("status")).toHaveText("로그아웃 중");
     expect(secondApi.historyRequests()).toBe(requestsWhileBlocked);
-    await expect(second.getByRole("link", { name: "Google로 시작하기" })).toHaveAttribute("aria-disabled", "true");
+    await expect(second.getByRole("link", { name: "Google로 로그인" })).toHaveAttribute("aria-disabled", "true");
     release();
-    await expect(first.getByRole("link", { name: "Google로 시작하기" })).not.toHaveAttribute("aria-disabled", "true");
-    await expect(second.getByRole("link", { name: "Google로 시작하기" })).not.toHaveAttribute("aria-disabled", "true");
+    await expect(first.getByRole("link", { name: "Google로 로그인" })).not.toHaveAttribute("aria-disabled", "true");
+    await expect(second.getByRole("link", { name: "Google로 로그인" })).not.toHaveAttribute("aria-disabled", "true");
     await expect(second.locator(".studio-shell")).toHaveCount(0);
   } finally {
     await context.close();
@@ -277,7 +277,7 @@ test("a signed-out permalink keeps its canonical target through Google login", a
     return route.fulfill({ status: 302, headers: { location: path } });
   });
   await page.goto(path);
-  const login = page.getByRole("link", { name: "Google로 시작하기" });
+  const login = page.getByRole("link", { name: "Google로 로그인" });
   await expect(login).toHaveAttribute("href", `/api/auth/google?return_to=${encodeURIComponent(path)}`);
   expect(api.historyRequests()).toBe(0);
   await login.click();
@@ -347,10 +347,108 @@ test("signing in again on tablet then resizing mobile keeps both panels closed",
   await page.goto(path);
   await expect(page.locator(".inspector")).toBeVisible();
   await page.getByRole("button", { name: "로그아웃", exact: true }).click();
-  await page.getByRole("link", { name: "Google로 시작하기" }).click();
+  await page.getByRole("link", { name: "Google로 로그인" }).click();
   await expect(page.locator(".inspector")).toBeVisible();
   await expect(page.getByRole("dialog", { name: "워크스페이스", exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expectCollapsedMobileWorkspace(page);
   await page.screenshot({ path: "test-results/session-layout-auth-transition-mobile.png", fullPage: true });
+});
+
+test("temporary auth503 keeps the verified editor and its unsaved changes until reconnection", async ({ page }) => {
+  await accountApi(page, "A");
+  await page.goto(`/sessions/${"a".repeat(32)}`);
+  const cell = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+  await cell.click();
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+  let unavailable = true;
+  let failedChecks = 0;
+  let recoveredChecks = 0;
+  await page.route("**/api/auth/me", (route) => {
+    if (unavailable) {
+      failedChecks++;
+      return route.fulfill({ status: 503, json: { detail: "signal ended" } });
+    }
+    recoveredChecks++;
+    return route.fallback();
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect.poll(() => failedChecks).toBeGreaterThan(0);
+  await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("link", { name: "Google로 로그인" })).toHaveCount(0);
+  await expect(page.getByText(/signal ended|로그인 상태를 확인할 수 없습니다/)).toHaveCount(0);
+  unavailable = false;
+  await expect.poll(() => recoveredChecks).toBeGreaterThan(0);
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+});
+
+test("initial auth503 stays neutral and establishes identity only after an automatic successful check", async ({ page }) => {
+  await accountApi(page, "A");
+  let unavailable = true;
+  await page.route("**/api/auth/me", (route) => unavailable
+    ? route.fulfill({ status: 503, json: { detail: "signal ended" } })
+    : route.fallback());
+  await page.goto(`/sessions/${"a".repeat(32)}`);
+  await expect(page.getByText("서버에 연결 중…", { exact: true })).toBeVisible();
+  await expect(page.locator(".studio-shell")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "다시 연결" })).toBeVisible();
+  await expect(page.getByText(/signal ended|로그인 상태를 확인할 수 없습니다/)).toHaveCount(0);
+  unavailable = false;
+  await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible({ timeout: 8000 });
+});
+
+for (const endpoint of ["system", "history", "detail"]) {
+  test(`startup ${endpoint} read recovers the permalink automatically after a redeploy503`, async ({ page }) => {
+    await accountApi(page, "A");
+    const path = `/sessions/${"a".repeat(32)}`;
+    const pattern = endpoint === "system" ? "**/api/system"
+      : endpoint === "history" ? "**/api/jobs" : `**/api/jobs/${"a".repeat(32)}`;
+    let attempts = 0;
+    await page.route(pattern, (route) => {
+      attempts++;
+      return attempts === 1
+        ? route.fulfill({ status: 503, json: { detail: "signal ended" } })
+        : route.fallback();
+    });
+    await page.goto(path);
+    await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible({ timeout: 8000 });
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    await expect(page).toHaveURL(new RegExp(`${path}$`));
+    await expect(page.getByText(/signal ended|서버 오류/)).toHaveCount(0);
+  });
+}
+
+test("an aborted background read remains quiet, preserves edits and retries without a reload", async ({ page }) => {
+  await accountApi(page, "A");
+  await page.goto(`/sessions/${"a".repeat(32)}`);
+  const cell = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+  await cell.click();
+  let unavailable = true;
+  let failedReads = 0;
+  await page.route("**/api/jobs", (route) => {
+    if (unavailable) {
+      failedReads++;
+      return route.abort("failed");
+    }
+    return route.fallback();
+  });
+  await expect.poll(() => failedReads).toBeGreaterThan(0);
+  await expect(page.locator(".status-bar .engine-indicator")).not.toHaveClass(/online/);
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText(/signal ended|Failed to fetch|서버 오류/)).toHaveCount(0);
+  unavailable = false;
+  await expect(page.locator(".status-bar .engine-indicator")).toHaveClass(/online/);
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+});
+
+test("an authoritative auth401 immediately removes an already verified workspace", async ({ page }) => {
+  await accountApi(page, "A");
+  await page.goto(`/sessions/${"a".repeat(32)}`);
+  await expect(page.getByRole("region", { name: "드럼 비트 편집기" })).toBeVisible();
+  await page.route("**/api/auth/me", (route) => route.fulfill({ status: 401 }));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.locator(".studio-shell, audio")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Google로 로그인" })).toBeVisible();
+  await expect(page.getByText("로그인이 만료되었습니다. Google 계정으로 다시 로그인하세요.", { exact: true })).toBeVisible();
 });

@@ -259,7 +259,6 @@ test("Modal starts on demand with service configuration and no engine selector",
   await setup(page, { modal: true });
   await expect(page.locator(".brand-version")).toHaveText("MODAL");
   await expect(page.locator(".sidebar-footer strong")).toHaveText("Modal GPU");
-  await expect(page.locator(".source-notes")).toContainText("Modal GPU에서 분석합니다");
   await expect(page.getByLabel("프로세싱 엔진")).toHaveCount(0);
   await expect(page.locator(".source-panel").getByRole("status")).toHaveText("분석 시 Modal GPU 자동 시작");
   await page.getByLabel("소스 파일 선택").setInputFiles({
@@ -287,7 +286,6 @@ test("Colab execution shows processing location, refreshed readiness and remote 
   const state = await setup(page, { colab: true });
   await expect(page.locator(".brand-version")).toHaveText("COLAB");
   await expect(page.locator(".sidebar-footer strong")).toHaveText("Google Colab GPU");
-  await expect(page.locator(".source-notes")).toContainText("업로드한 오디오는 Google Colab GPU에서 분석합니다");
   await expect(page.locator(".source-panel").getByRole("status")).toHaveText("준비된 GPU 재사용 가능");
   expect(state.systemRequests()).toBe(1);
   state.runtime("unavailable");
@@ -521,7 +519,7 @@ test("draft guard and reversible navigation preserve unsaved work", async ({
   await page.getByRole("button", { name: "새로 만들기", exact: true }).click();
   await page.getByRole("button", { name: "변경 버리고 이동" }).click();
   await expect(
-    page.getByRole("heading", { name: "새로운 드럼 세션" }),
+    page.getByRole("heading", { name: "새 세션" }),
   ).toBeVisible();
 });
 
@@ -617,7 +615,7 @@ test('session deletion requires confirmation and updates history', async ({ page
   await expect(page.getByRole('region', { name: '드럼 비트 편집기' })).toBeVisible();
   await page.getByRole('button', { name: '세션 삭제', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '세션 삭제', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '새로운 드럼 세션' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '새 세션' })).toBeVisible();
   await page.getByRole('button', { name: '불러오기', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '불러오기', exact: true })).toContainText('저장된 세션이 없습니다.');
 });
@@ -1636,4 +1634,22 @@ test("private direct media preloads audio and shows buffering until a delayed ra
   expect(directRequests.some((request) => request.path === `/media/${id}/audio.wav` && request.range?.startsWith("bytes="))).toBe(true);
   expect(apiAudioRequests).toEqual([]);
   expect(state.errors).toEqual([]);
+});
+
+test("a failed score write preserves edits and requires an explicit retry", async ({ page }) => {
+  await setup(page);
+  await openSession(page);
+  const cell = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+  await cell.click();
+  let writes = 0;
+  await page.route(`**/api/jobs/${id}/score`, (route) => {
+    writes++;
+    return route.fulfill({ status: 503, json: { detail: "signal ended" } });
+  });
+  await page.getByRole("button", { name: "악보 재생성", exact: true }).click();
+  await expect(page.getByText("서버에 연결할 수 없습니다. 다시 시도하세요.", { exact: true })).toBeVisible();
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+  await page.waitForTimeout(2200);
+  expect(writes).toBe(1);
+  await expect(page.getByRole("button", { name: "악보 재생성", exact: true })).toBeEnabled();
 });
