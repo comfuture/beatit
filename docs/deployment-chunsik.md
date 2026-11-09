@@ -1,5 +1,13 @@
 # chunsik deployment
 
+The historical deployment below describes the pre-issue-7 single-user service.
+The multi-user image requires [the MySQL/object/OAuth migration procedure](multi-user-deployment.md)
+before rollout. Its canonical HTTPS origin is `https://beatit.changkyun.kim`, and
+its health check is `/api/health`; `/api/jobs` requires authentication. Existing
+SQLite/JSON data is imported only for an explicitly assigned Google account.
+Do not replace the running image until its credentials, legacy backup/import and
+two-account checks are ready.
+
 Beatit runs in `/home/ubuntu/services/beatit` on chunsik with Docker Compose.
 The ARM64 host runs the web service and local score editing. This deployment selects
 the private Modal GPU engine for inference; local CPU/Mac and Colab remain supported

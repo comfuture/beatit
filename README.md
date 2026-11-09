@@ -33,7 +33,9 @@ score regeneration. Suspect beats have a translucent red background and an
 explanation: review the recording, edit if needed, then resolve each beat.
 Resolutions support undo/redo and are saved with score regeneration.
 See [review rules](docs/studio-workspace.md#transcription-review) for detection limits.
-FastAPI serves the generated UI and a single job queue.
+FastAPI serves the generated UI and a single leased job queue. Google sign-in
+creates owner-scoped accounts. A dedicated managed OCI MySQL database stores
+project state; private S3-compatible object storage holds media and results.
 Demucs uses `htdemucs`. The MDX23C
 DrumSep model splits the drums into kick, snare, toms, hi-hat, and cymbal stems. ADTOF,
 the pinned PyTorch Frame_RNN port, runs on the drum stem and each kit stem; their scores
@@ -65,7 +67,9 @@ npm --prefix frontend run build
 brew install uv ffmpeg
 brew install --cask musescore  # optional: SVG and PDF engraving
 uv sync --frozen
-uv run drum-score serve --engine local
+# Configure managed MySQL, private object storage and Google OAuth first:
+# see .env.multiuser.example and docs/multi-user-deployment.md.
+BEATIT_PUBLIC_URL=http://localhost:8000 uv run --env-file .env drum-score serve --engine local
 ```
 
 ### Linux CPU
@@ -75,7 +79,7 @@ Install uv using the link above, then:
 ```sh
 sudo apt-get install ffmpeg git
 uv sync --frozen --extra cpu
-uv run --extra cpu drum-score serve --engine local
+BEATIT_PUBLIC_URL=http://localhost:8000 uv run --env-file .env --extra cpu drum-score serve --engine local
 ```
 
 Linux ARM64 also needs a Rust toolchain and `build-essential pkg-config libopus-dev`
@@ -87,7 +91,10 @@ Open **http://127.0.0.1:8000**, import a source into a new session, and start an
 The build installs the static Nuxt app in `src/transcription/static/web`; rebuild
 after frontend changes. Node is only needed for building, not serving. Docker builds
 the frontend automatically. Build the frontend before packaging a Python wheel.
-Jobs and media are saved in the ignored `data/` directory. Run
+The ignored `data/` directory contains disposable processing scratch; projects and
+results survive its removal through MySQL and object storage. Sign in with Google
+before uploading. See [multi-user setup, migration and backup/restore](docs/multi-user-deployment.md)
+and [Google OAuth setup](docs/google-oauth-setup.md). Run
 `uv run drum-score doctor` to check the host, or `uv run drum-score download-model`
 to fetch the Demucs, DrumSep, and Beat This! weights before processing. Use the selected
 extra on Linux.
@@ -111,6 +118,7 @@ See [tom refinement](docs/tom-refinement.md) for its limits.
 
 ```sh
 uv sync --frozen --extra dev
+# Full API tests also require BEATIT_TEST_DATABASE_URL for a disposable beatit_test DB.
 uv run pytest -q
 npm --prefix frontend run typecheck
 npm --prefix frontend test
