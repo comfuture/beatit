@@ -68,12 +68,31 @@ function server({ loseFirstAck = false, failMiddle = false } = {}) {
       if (loseFirstAck && offset === 0) return { status: 503, text: "upstream disconnected" };
       return { json: session };
     }
+    if (request.method === "PUT") {
+      expect(request.body.size).toBe(session.size);
+      received.push(request.body);
+      session.offset = session.size;
+      if (loseFirstAck) return { status: 503, text: "upstream disconnected" };
+      return { json: session };
+    }
     throw new Error(`Unexpected request ${request.method} ${request.path}`);
   };
   return { session, received, job, resume: () => { failMiddle = false; } };
 }
 
 describe("bounded, retryable media uploads", () => {
+  it("sends direct mode as one whole-file request and reconciles a lost response", async () => {
+    const backend = server({ loseFirstAck: true });
+    const upload = uploadMedia(new File(["12345678abcdefghEND"], "song.mp4"), defaultOptions(), {
+      mode: "direct", signal: new AbortController().signal, onSession: vi.fn(), onProgress: vi.fn(),
+    });
+    await vi.runAllTimersAsync();
+    expect(await upload).toEqual(backend.job);
+    expect(sent.filter((request) => request.method === "PUT")).toHaveLength(1);
+    expect(sent.filter((request) => request.method === "PATCH")).toHaveLength(0);
+    expect(sent.find((request) => request.method === "PUT")!.timeout).toBe(30 * 60 * 1000);
+    expect(await new Blob(backend.received).text()).toBe("12345678abcdefghEND");
+  });
   it("sends bounded chunks, recovers a lost acknowledgement and publishes once", async () => {
     const backend = server({ loseFirstAck: true });
     const progress: number[] = [];

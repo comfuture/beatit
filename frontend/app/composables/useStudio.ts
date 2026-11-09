@@ -12,6 +12,7 @@ import { connectionUnavailable, runtimeStatus } from "~/utils/execution";
 import { sessionIdFromPath, sessionPath } from "~/utils/sessionLocation";
 import { actionErrorMessage, isTransientReadError } from "~/utils/connection";
 import { discardUpload, uploadMedia } from "~/utils/upload";
+import { workspaceEvents } from "~/utils/workspaceEvents";
 
 export function useStudio(userId: string, onUnauthorized: () => void) {
   const storageKey = `beatit-session:${userId}`;
@@ -95,7 +96,9 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   let selection = 0;
-  let systemRefreshedAt = 0;
+  let displayRevision = 0;
+  let bootstrapAttempt = 0;
+  let resyncNeeded = false;
   let initialized = false;
   let retrySelection = false;
   const pendingRequests = new Set<AbortController>();
@@ -156,11 +159,13 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     });
     if (disposed) return;
     system.value = available;
-    systemRefreshedAt = Date.now();
   }
   async function showJob(job: Job, token: number) {
     if (token !== selection || disposed) return;
+    if (current.value?.id === job.id && current.value.updated > job.updated) return;
+    const display = ++displayRevision;
     current.value = job;
+    loadingEvents.value = false;
     const next = job.result ? `${job.id}:${job.result.generation}` : "";
     if (next && next !== generation) {
       // A heading-only generation preserves the saved rhythm and local edit history.
@@ -174,7 +179,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
         const loaded = await api<DrumEvent[]>(
           `/api/jobs/${job.id}/files/events.json?v=${job.result!.generation}`,
         );
-        if (token !== selection || disposed) return;
+        if (token !== selection || display !== displayRevision || disposed) return;
         events.value = loaded;
         originalEvents.value = copyEvents(loaded);
         beatReview.value = mergeBeatReview(loaded, job.result!.grid, job.result!.beat_review);
@@ -185,7 +190,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
         redoStack.value = [];
         generation = next;
       } finally {
-        if (token === selection) loadingEvents.value = false;
+        if (token === selection && display === displayRevision) loadingEvents.value = false;
       }
     }
   }
@@ -195,36 +200,100 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     if (window.location.pathname === "/") commitLocation("/", "none");
     else await openLocation();
   }
-  async function poll() {
-    if (disposed) return;
-    const token = selection;
+  async function reconcileSelection() {
     const id = activeId.value;
+    const token = selection;
+    if (!id || disposed) return;
     try {
-      if (!system.value || Date.now() - systemRefreshedAt >= 10000)
-        await refreshSystem();
-      await refreshHistory();
-      if (!initialized) await initializeLocation();
-      else if (
-        id &&
-        (retrySelection || (current.value &&
-          (["running", "queued"].includes(current.value.status) ||
-            (current.value.result && generation !== `${id}:${current.value.result.generation}`))))
-      ) {
-        await showJob(await api<Job>(`/api/jobs/${id}`), token);
-        if (token === selection && !disposed) {
-          retrySelection = false;
-          loadingEvents.value = false;
-          localStorage.setItem(storageKey, id);
+      await showJob(await api<Job>(`/api/jobs/${id}`), token);
+      if (token === selection && !disposed) {
+        retrySelection = false;
+        loadingEvents.value = false;
+        localStorage.setItem(storageKey, id);
+      }
+    } catch (reason) {
+      if (token !== selection || disposed) return;
+      if ((reason as { status?: number }).status === 404) {
+        newSession("replace");
+        error.value = "세션을 찾을 수 없습니다. 삭제되었거나 접근 권한이 없는 주소입니다.";
+      } else {
+        online.value = false;
+        if (!isTransientReadError(reason) && !error.value) report(reason);
+        throw reason;
+      }
+    }
+  }
+  const stream = workspaceEvents({
+    connected: () => { if (!disposed) online.value = !retrySelection; },
+    disconnected: () => { online.value = false; resyncNeeded = true; },
+    checkSession: () => {
+      window.dispatchEvent(new Event("beatit-session-check"));
+      if (activeId.value && current.value) void reconcileSelection().catch(() => {});
+    },
+    event: async (type, value) => {
+      if (disposed) return;
+      if (type === "session-expired") {
+        stream.close();
+        onUnauthorized();
+      } else if (type === "snapshot") {
+        if (!Array.isArray(value.jobs) || !value.system || typeof value.system.ffmpeg !== "boolean")
+          throw new Error("Invalid workspace snapshot");
+        const known = new Map(jobs.value.map((job) => [job.id, job]));
+        jobs.value = (value.jobs as Job[]).map((job) => {
+          const previous = known.get(job.id);
+          return previous && previous.updated > job.updated ? previous : job;
+        });
+        system.value = value.system;
+        const selected = jobs.value.find((job) => job.id === activeId.value);
+        if (current.value && (resyncNeeded || (selected && selected.updated !== current.value.updated)))
+          await reconcileSelection();
+        resyncNeeded = false;
+        online.value = !retrySelection;
+      } else if (type === "system") {
+        system.value = value;
+      } else if (type === "job") {
+        const job = value.job as Job;
+        if (!job || typeof job.id !== "string") throw new Error("Invalid job event");
+        const previous = jobs.value.find((item) => item.id === job.id);
+        if (previous && previous.updated > job.updated) return;
+        jobs.value = [job, ...jobs.value.filter((item) => item.id !== job.id)]
+          .sort((a, b) => b.created - a.created).slice(0, 100);
+        if (job.id === activeId.value) await showJob(job, selection);
+      } else if (type === "job-deleted") {
+        jobs.value = jobs.value.filter((job) => job.id !== value.id);
+        if (activeId.value === value.id) {
+          newSession("replace");
+          error.value = "세션이 삭제되었습니다.";
         }
       }
-      online.value = !retrySelection;
+    },
+  });
+  async function bootstrap() {
+    if (disposed) return;
+    clearTimeout(timer);
+    try {
+      await refreshSystem();
+      await refreshHistory();
+      if (!initialized) await initializeLocation();
+      else if (retrySelection) await reconcileSelection();
+      if (retrySelection) throw new TypeError("Network unavailable");
+      online.value = true;
+      bootstrapAttempt = 0;
+      if (!document.hidden) stream.start(current.value ? activeId.value : undefined);
+      if (system.value && !system.value.ffmpeg)
+        error.value = "FFmpeg/ffprobe가 없습니다. README의 설치 안내를 확인하세요.";
     } catch (reason) {
       online.value = false;
-      // Failed background reads never replace editor/validation errors. The
-      // next poll retries reads only; write operations remain explicitly manual.
       if (!isTransientReadError(reason) && !error.value) report(reason);
+      if (!disposed) timer = setTimeout(bootstrap, Math.min(1800 * 2 ** bootstrapAttempt++, 30000));
+    } finally {
+      loading.value = false;
     }
-    if (!disposed) timer = setTimeout(poll, 1800);
+  }
+  function onVisibility() {
+    if (document.hidden) stream.suspend();
+    else if (system.value && initialized) stream.resume(current.value ? activeId.value : undefined);
+    else void bootstrap();
   }
   async function selectJob(id: string, locationMode: LocationMode = "push") {
     const path = sessionPath(id);
@@ -255,7 +324,10 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
         } else report(e);
       }
     } finally {
-      if (token === selection) loadingEvents.value = retrySelection;
+      if (token === selection) {
+        loadingEvents.value = retrySelection;
+        if (!loading.value && !disposed && !document.hidden) stream.start(current.value ? id : undefined);
+      }
     }
   }
   function newSession(locationMode: LocationMode = "push") {
@@ -275,6 +347,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     loadingEvents.value = false;
     localStorage.removeItem(storageKey);
     commitLocation("/", locationMode);
+    if (!loading.value && !disposed && !document.hidden) stream.start();
   }
   async function openLocation(path = window.location.pathname, mode: LocationMode = "none") {
     const id = sessionIdFromPath(path);
@@ -334,6 +407,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
         signal: uploadRequest.signal,
         sessionId: uploadSession.id,
         chunkSize: system.value?.upload_chunk_bytes,
+        mode: system.value?.upload_mode,
         onSession: (id) => { if (uploadSession) uploadSession.id = id; },
         onProgress: (percent) => { if (!disposed) uploadProgress.value = percent; },
       });
@@ -503,25 +577,10 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
       event.returnValue = "";
     }
   }
-  onMounted(async () => {
+  onMounted(() => {
     window.addEventListener("beforeunload", beforeUnload);
-    try {
-      await refreshSystem();
-      online.value = true;
-      await refreshHistory();
-      // A valid deep link is owner-checked even outside the latest history.
-      await initializeLocation();
-      online.value = !retrySelection;
-      if (system.value && !system.value.ffmpeg)
-        error.value =
-          "FFmpeg/ffprobe가 없습니다. README의 설치 안내를 확인하세요.";
-    } catch (e) {
-      online.value = false;
-      if (!isTransientReadError(e)) report(e);
-    } finally {
-      loading.value = false;
-      if (!disposed) timer = setTimeout(poll, 1800);
-    }
+    document.addEventListener("visibilitychange", onVisibility);
+    void bootstrap();
   });
   onBeforeUnmount(() => {
     disposed = true;
@@ -530,6 +589,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     pendingRequests.clear();
     localStorage.removeItem(storageKey);
     uploadRequest?.abort();
+    stream.close();
     jobs.value = [];
     current.value = null;
     selectedFile.value = null;
@@ -542,6 +602,7 @@ export function useStudio(userId: string, onUnauthorized: () => void) {
     metadata.value = { title: "", author: "" };
     clearTimeout(timer);
     window.removeEventListener("beforeunload", beforeUnload);
+    document.removeEventListener("visibilitychange", onVisibility);
   });
   return {
     jobs,

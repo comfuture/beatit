@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { mockWorkspaceEvents } from "./workspaceEvents";
 import type { BeatReview, DrumEvent, ScoreMetadata, SystemInfo } from "../../app/types/studio";
 const id = "a".repeat(32);
 const settings = {
@@ -70,6 +71,25 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
     state: serverManaged || modal ? "idle" : "ready", accelerator: "T4", prepared: !serverManaged && !modal, idle_timeout_seconds: modal ? 2 : 600,
     ...(serverManaged || modal ? { allocation_mode: "server", can_allocate: true, manager_error: null } : {}),
   };
+  const systemInfo = () => ({
+    devices: remoteExecution ? ["cuda"] : ["cpu"],
+    default_device: remoteExecution ? "cuda" : "cpu",
+    ...(remoteExecution ? {
+      execution_backend: modal ? "modal" : "colab", execution_label: modal ? "Modal GPU" : "Google Colab GPU",
+      remote_runtime: { ...runtime },
+    } : {}),
+    ffmpeg: true, verovio: true, musescore: false, media_base_url: mediaBaseUrl,
+    max_upload_bytes: 1073741824, max_duration_seconds: 1800,
+  });
+  const pushed = await mockWorkspaceEvents(page, () => ({ jobs: history ? [job] : [], system: systemInfo() }));
+  let readRequests = { me: 0, jobs: 0, system: 0 };
+  page.on("request", (request) => {
+    if (request.method() !== "GET") return;
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/auth/me") readRequests.me++;
+    if (path === "/api/jobs") readRequests.jobs++;
+    if (path === "/api/system") readRequests.system++;
+  });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.route("**/api/**", async (route) => {
@@ -109,7 +129,7 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
         progress: remoteExecution ? 0.03 : 0.42,
         message: modal ? "준비된 Modal 이미지에서 GPU를 시작합니다." : serverManaged ? "Colab GPU 할당 중" : colabExecution ? "Colab 실행 환경 준비 중" : "드럼 분리 중",
       };
-      if (serverManaged) runtime.state = "allocating";
+      if (serverManaged) { runtime.state = "allocating"; void pushed.emit("system", systemInfo()); }
       (job as any).result = undefined;
       return route.fulfill({ status: 202, json: job });
     }
@@ -193,7 +213,17 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       if (rejectHeading) return route.fulfill({ status: 500, json: { detail: "악보 정보 적용 실패" } });
       pendingHeading = heading;
       job.status = "queued";
-      return route.fulfill({ status: 202, json: job });
+      await route.fulfill({ status: 202, json: job });
+      setTimeout(() => {
+        if (!pendingHeading) return;
+        job.result.metadata = pendingHeading;
+        job.result.metadata_source_generation = job.result.generation;
+        job.result.generation += "-metadata";
+        job.status = "completed";
+        pendingHeading = null;
+        void pushed.emit("job", { job });
+      }, 20);
+      return;
     }
     if (path.endsWith("/cancel")) {
       job.status = "cancelled";
@@ -222,6 +252,8 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
   ).toBeVisible();
   return {
     errors,
+    pushed,
+    readRequests: () => ({ ...readRequests }),
     getSaved: () => saved,
     getHeading: () => heading,
     rejectHeading: (value: boolean) => { rejectHeading = value; },
@@ -229,19 +261,23 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
     runtime: (state: typeof runtime.state, prepared = false) => {
       runtime.state = state;
       runtime.prepared = prepared;
+      void pushed.emit("system", systemInfo());
     },
     manager: (canAllocate: boolean, error: string | null = null) => {
       runtime.can_allocate = canAllocate;
       runtime.manager_error = error;
+      void pushed.emit("system", systemInfo());
     },
     progress: (stage: string, message: string, progress: number) => {
       job.status = "running";
       job.progress = { stage, progress, message };
       (job as any).result = undefined;
+      void pushed.emit("job", { job });
     },
     fail: () => {
       job.status = "failed";
       (job as any).error = "모델 실행 실패";
+      void pushed.emit("job", { job });
     },
   };
 }
@@ -254,6 +290,63 @@ async function openSession(page: Page) {
     page.getByRole("region", { name: "드럼 비트 편집기" }),
   ).toBeVisible();
 }
+
+test("an idle workspace reuses its login and snapshots without recurring API reads", async ({ page }) => {
+  await page.clock.install();
+  const state = await setup(page);
+  await expect.poll(() => state.pushed.connections()).toBe(1);
+  const baseline = state.readRequests();
+  expect(baseline).toEqual({ me: 1, jobs: 1, system: 1 });
+  await page.clock.runFor(120000);
+  expect(state.readRequests()).toEqual(baseline);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(() => state.pushed.connections()).toBe(0);
+  await page.clock.runFor(120000);
+  expect(state.readRequests()).toEqual(baseline);
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(() => state.pushed.connections()).toBe(1);
+  expect(state.readRequests()).toEqual(baseline);
+});
+
+test("reconnection loads new artifacts while an old generation is pending and ignores its late completion", async ({ page }) => {
+  const state = await setup(page);
+  await openSession(page);
+  let release!: () => void;
+  let markPending!: () => void;
+  const pending = new Promise<void>((resolve) => { markPending = resolve; });
+  const blocked = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(new RegExp(`/api/jobs/${id}/files/events\\.json\\?v=render-[23]$`), async (route) => {
+    const old = route.request().url().endsWith("render-2");
+    if (old) { markPending(); await blocked; }
+    await route.fulfill({ json: [{ ...initialEvents[0], time: old ? 0.125 : 0.25 }] });
+  });
+  const next = sampleJob();
+  next.updated++;
+  next.result.generation = "render-2";
+  await state.pushed.emit("job", { job: next });
+  await pending;
+  await state.pushed.fail();
+  await expect.poll(() => state.pushed.connections()).toBe(1);
+  next.updated++;
+  next.result.generation = "render-3";
+  await state.pushed.emit("job", { job: next });
+  const latest = page.getByRole("button", { name: "1마디 3번째 격자 Kick", exact: true });
+  const obsolete = page.getByRole("button", { name: "1마디 2번째 격자 Kick", exact: true });
+  await expect(latest).toHaveAttribute("aria-pressed", "true");
+  const oldResponse = page.waitForResponse((response) => response.url().endsWith("events.json?v=render-2"));
+  release();
+  await oldResponse;
+  await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())));
+  await expect(latest).toHaveAttribute("aria-pressed", "true");
+  await expect(obsolete).toHaveAttribute("aria-pressed", "false");
+  expect(state.errors).toEqual([]);
+});
 
 test("Modal starts on demand with service configuration and no engine selector", async ({ page }) => {
   await setup(page, { modal: true });
@@ -290,7 +383,7 @@ test("Colab execution shows processing location, refreshed readiness and remote 
   expect(state.systemRequests()).toBe(1);
   state.runtime("unavailable");
   await expect(page.locator(".source-panel").getByRole("status")).toHaveText("Colab 연결 대기", { timeout: 15000 });
-  expect(state.systemRequests()).toBe(2);
+  expect(state.systemRequests()).toBe(1);
   await expect(page.locator(".sidebar-footer .engine-indicator")).not.toHaveClass(/online/);
 
   await page.getByLabel("소스 파일 선택").setInputFiles({

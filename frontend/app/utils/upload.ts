@@ -15,6 +15,7 @@ type UploadSettings = {
   onSession: (id: string) => void;
   sessionId?: string;
   chunkSize?: number;
+  mode?: "direct" | "chunked";
 };
 const aborted = () => new DOMException("업로드를 취소했습니다.", "AbortError");
 const statusOf = (error: unknown) => (error as { status?: number })?.status || 0;
@@ -32,7 +33,8 @@ function pause(ms: number, signal: AbortSignal) {
 
 /** Every request has both a total deadline and a no-progress deadline. */
 function request<T>(method: string, path: string, signal: AbortSignal, body?: Document | XMLHttpRequestBodyInit | null,
-                    headers: Record<string, string> = {}, progress?: (bytes: number) => void): Promise<T> {
+                    headers: Record<string, string> = {}, progress?: (bytes: number) => void,
+                    timeout = 120000): Promise<T> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) return reject(aborted());
     const xhr = new XMLHttpRequest();
@@ -48,7 +50,7 @@ function request<T>(method: string, path: string, signal: AbortSignal, body?: Do
       }, 30000);
     };
     xhr.open(method, path);
-    xhr.timeout = 120000;
+    xhr.timeout = timeout;
     for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value);
     xhr.upload.onprogress = (event) => { armIdle(); progress?.(event.loaded); };
     xhr.upload.onload = armIdle;
@@ -87,7 +89,7 @@ async function retry<T>(action: () => Promise<T>, signal: AbortSignal): Promise<
 export async function uploadMedia(file: File, options: Options, settings: UploadSettings): Promise<Job> {
   const { signal, onProgress, onSession } = settings;
   const chunkSize = settings.chunkSize || DEFAULT_CHUNK_BYTES;
-  if (file.size <= chunkSize && !settings.sessionId) {
+  if (settings.mode !== "direct" && file.size <= chunkSize && !settings.sessionId) {
     const form = new FormData();
     form.append("file", file);
     form.append("options", JSON.stringify(options));
@@ -109,6 +111,21 @@ export async function uploadMedia(file: File, options: Options, settings: Upload
   const path = `/api/uploads/${current.id}`;
   const updateProgress = () => onProgress(Math.floor(current.offset / file.size * 100));
   updateProgress();
+  if (settings.mode === "direct" && current.state === "uploading" && current.offset === 0) {
+    current = await retry<UploadSession>(async () => {
+      try {
+        return await request<UploadSession>("PUT", path, signal, file,
+          { "Content-Type": "application/octet-stream" },
+          (bytes) => onProgress(Math.min(99, Math.floor(bytes / file.size * 100))), 30 * 60 * 1000);
+      } catch (error) {
+        if (signal.aborted || !retryable(error)) throw error;
+        const status = await request<UploadSession>("GET", path, signal);
+        if (status.offset === file.size) return status;
+        throw error;
+      }
+    }, signal);
+    updateProgress();
+  }
   while (current.state === "uploading" && current.offset < file.size) {
     const offset: number = current.offset;
     const chunk: Blob = file.slice(offset, Math.min(offset + current.chunk_size, file.size));

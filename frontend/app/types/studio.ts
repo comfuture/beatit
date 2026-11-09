@@ -113,6 +113,7 @@ export interface SystemInfo {
   verovio: boolean;
   max_upload_bytes: number;
   upload_chunk_bytes?: number;
+  upload_mode?: "direct" | "chunked";
   max_duration_seconds: number;
 }
 export const defaultOptions = (): Options => ({

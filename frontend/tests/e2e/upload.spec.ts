@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { mockWorkspaceEvents } from "./workspaceEvents";
 
-test("a large video uses bounded chunks, recovers an acknowledgement and shows publication progress", async ({ page }) => {
+for (const mode of ["chunked", "direct"] as const) {
+test(`a large video uses ${mode} transport, recovers an acknowledgement and shows publication progress`, async ({ page }) => {
   const id = "b".repeat(32);
   const chunkSize = 8 * 1024 ** 2;
   const source = Buffer.alloc(chunkSize + 7, 31);
@@ -16,6 +18,10 @@ test("a large video uses bounded chunks, recovers an acknowledgement and shows p
     has_result: false, result: null, request: { options: {} },
     progress: { stage: "queued", progress: 0, message: "분석 대기 중" },
   };
+  await mockWorkspaceEvents(page, () => ({ jobs: published ? [job] : [], system: {
+    ffmpeg: true, verovio: true, musescore: false, devices: ["cpu"], default_device: "cpu",
+    max_upload_bytes: 1024 ** 3, upload_chunk_bytes: chunkSize, upload_mode: mode, max_duration_seconds: 1800,
+  } }));
   const session = () => ({ id, size: source.length, offset, chunk_size: chunkSize,
     state: published ? "completed" : completes ? "finalizing" : "uploading" });
   await page.route("**/api/**", async (route) => {
@@ -24,7 +30,7 @@ test("a large video uses bounded chunks, recovers an acknowledgement and shows p
     if (path === "/api/auth/me") return route.fulfill({ json: { user: { id: "upload-user", name: "Upload User", email: "upload@example.test" } } });
     if (path === "/api/system") return route.fulfill({ json: {
       ffmpeg: true, verovio: true, musescore: false, devices: ["cpu"], default_device: "cpu",
-      max_upload_bytes: 1024 ** 3, upload_chunk_bytes: chunkSize, max_duration_seconds: 1800,
+      max_upload_bytes: 1024 ** 3, upload_chunk_bytes: chunkSize, upload_mode: mode, max_duration_seconds: 1800,
     } });
     if (path === "/api/jobs" && method === "GET") return route.fulfill({ json: published ? [job] : [] });
     if (path === `/api/jobs/${id}`) return route.fulfill({ json: job });
@@ -37,6 +43,13 @@ test("a large video uses bounded chunks, recovers an acknowledgement and shows p
       return route.fulfill({ status: 202, json: session() });
     }
     if (path === `/api/uploads/${id}` && method === "GET") return route.fulfill({ json: session() });
+    if (path === `/api/uploads/${id}` && method === "PUT") {
+      const data = route.request().postDataBuffer()!;
+      expect(data).toEqual(source);
+      received.push(data);
+      offset = data.length;
+      return route.fulfill({ status: 503, body: "upstream disconnected after upload" });
+    }
     if (path === `/api/uploads/${id}` && method === "PATCH") {
       const data = route.request().postDataBuffer()!;
       expect(Number(route.request().headers()["upload-offset"])).toBe(offset);
@@ -56,10 +69,12 @@ test("a large video uses bounded chunks, recovers an acknowledgement and shows p
   await expect(page.getByText("파일 저장 중", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "업로드 취소", exact: true })).toHaveCount(0);
   expect(Buffer.concat(received)).toEqual(source);
-  expect(received).toHaveLength(2);
+  expect(received).toHaveLength(mode === "direct" ? 1 : 2);
   expect(completes).toBe(1);
   published = true;
   await expect(page).toHaveURL(new RegExp(`/sessions/${id}$`));
   await expect(page.getByRole("heading", { name: "드럼 트랙을 분석하고 있습니다" })).toBeVisible();
   expect(errors).toEqual([]);
 });
+
+}

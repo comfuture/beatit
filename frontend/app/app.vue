@@ -30,6 +30,7 @@ let disposed = false;
 let revision = 0;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let pending: AbortController | undefined;
+let retryAttempt = 0;
 
 function clearWorkspace() {
   user.value = null;
@@ -90,8 +91,11 @@ async function checkSession() {
       checking.value = false;
     }
   } finally {
-    if (!disposed && token === revision && !signingOut.value && !blockedLogout.value)
-      timer = setTimeout(checkSession, 1800);
+    if (!disposed && token === revision && !signingOut.value && !blockedLogout.value) {
+      if (reconnecting.value)
+        timer = setTimeout(checkSession, Math.min(1800 * 2 ** retryAttempt++, 30000));
+      else retryAttempt = 0;
+    }
   }
 }
 function expireSession() {
@@ -103,7 +107,6 @@ function expireSession() {
   clearWorkspace();
   authError.value = "로그인이 만료되었습니다. Google 계정으로 다시 로그인하세요.";
   checking.value = false;
-  timer = setTimeout(checkSession, 1800);
 }
 function suspendSession() {
   resetReconnect();
@@ -192,6 +195,7 @@ onMounted(() => {
   window.addEventListener("focus", onFocus);
   window.addEventListener("storage", onStorage);
   window.addEventListener("beatit-session-expired", expireSession);
+  window.addEventListener("beatit-session-check", onFocus);
   void checkSession();
 });
 onBeforeUnmount(() => {
@@ -204,6 +208,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("focus", onFocus);
   window.removeEventListener("storage", onStorage);
   window.removeEventListener("beatit-session-expired", expireSession);
+  window.removeEventListener("beatit-session-check", onFocus);
 });
 </script>
 
