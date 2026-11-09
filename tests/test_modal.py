@@ -232,6 +232,19 @@ def test_modal_prepares_on_cpu_before_gpu_and_cleans_transfer_files(rpc):
     assert not list(rpc.directory.glob(".modal-*"))
     assert not rpc.inference.cancelled
     assert json.loads((rpc.directory / "progress.json").read_text())["stage"] == "complete"
+    runtime = json.loads((rpc.directory / "result.json").read_text())["execution_runtime"]
+    assert runtime["total_elapsed_seconds"] >= sum(runtime["phase_seconds"].values()) - 0.01
+    assert runtime["phase_seconds"]["validate_import"] >= 0
+
+
+def test_smoke_directory_name_does_not_become_an_invalid_remote_job_id(rpc):
+    directory = rpc.directory.parent / "modal-first"
+    rpc.directory.rename(directory)
+    modal_worker.run(directory)
+    from transcription.colab_artifacts import valid_identifier
+
+    identifier = rpc.volume.uploaded[0].split("/")[0]
+    assert valid_identifier(identifier)
 
 
 def test_failed_model_preparation_never_allocates_gpu(rpc):
