@@ -61,6 +61,49 @@ popover contains cell shortcuts and new-hit velocity. A yellow suspect-beat butt
 appears beside the bar locator only while reviews are pending;
 the grid colors and per-beat reasons carry the review state without a standing banner.
 
+## Beat-based first-bar alignment
+
+An analyzed session exposes relative ±0.5/±1 beat actions in its rhythm inspector.
+One beat always means the quarter-note BPM unit, including 6/8 and 7/8. A half
+beat at 120 BPM changes the requested offset by 0.25 seconds. The primary value
+is expressed in beats from audio time zero; seconds remain an advanced input.
+
+Each action changes an offset draft. Undo/redo and **위치 되돌리기** preserve
+unrelated hit, velocity, heading and rhythm-setting drafts. Opposite actions
+restore the requested position before saving. Saved score views and playback keep
+using the published grid until **악보 재생성** publishes the replacement.
+
+At save, the requested anchor is moved backward by whole measures when necessary
+to include the earliest source hit. This preserves its musical phase and existing
+negative-offset pickup representation without trimming a long empty intro or
+dropping a first hit. The inspector displays the effective saved anchor and
+number of leading measures. Bounds are rejected rather than silently clamped.
+Source event timestamps and source audio remain unchanged; triplet quantization
+still uses the selected triplet grid at the new phase.
+
+The existing owner-scoped `POST /api/jobs/{id}/score` accepts a backward-compatible
+`preserve_events` flag and optional `source_generation` fence. An opaque
+`client_edit_id` in the job request identifies a client's own publication even
+when its HTTP acknowledgement arrives after its event update. Alignment saves
+send all displayed draft events, metadata and the generation they came from.
+The store checks that generation under the job lock; a stale generation returns
+409 and a foreign owner still receives 404. Failed writes keep the local draft.
+An unexpected remote generation also keeps an alignment draft until the user
+explicitly reloads through the existing discard-confirmation flow.
+An own publication can replace only the draft that was submitted; edits made
+after an uncertain write outcome are retained for the same explicit decision.
+In preservation mode, omitted events come from the published generation rather
+than the raw inference cache. Cached engraving bypasses tempo estimation and tom
+reclassification, retaining event pitches, velocity and provenance. Rendering
+failure retains the previous published result. Changed grids reset old review
+confirmations, and source/download files retain their existing authorization.
+
+Synthesized playback clamps a source hit's quantized timestamp to audio time zero
+or just inside the audio end when needed. Events originally outside the source
+duration remain excluded. MIDI retains its existing full quantized timing; the
+audio transport still stops at its source/selection boundary rather than adding
+a synthetic tail.
+
 `/api/jobs/{id}/waveform?source=audio.wav` returns at most 1200 amplitude peaks.
 It only reads allowlisted job audio, reads bounded blocks, and caches by file
 modification time and size. Large source files are not decoded into browser memory.
