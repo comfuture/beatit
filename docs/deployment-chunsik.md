@@ -72,6 +72,16 @@ progress or 120 seconds total; publication polling is bounded to 15 minutes.
 Upload cancellation is available during transfer, and the UI distinguishes
 `파일 저장 중` from byte transfer and analysis.
 
+### Static asset prefetch errors
+
+Cloudflare Speed Brain can return an empty 503 response with
+`cf-speculation-refused: prefetch refused: not eligible` for speculative requests.
+The observed Nuxt error-page CSS/JS failures had this header, while ordinary
+origin requests returned 200. The frontend build disables optional manifest
+prefetch hints and keeps required stylesheet/module preload hints. Error-page
+chunks remain available for normal loading. No DNS or origin routing change is
+needed for this failure mode.
+
 ## Operate the correct Compose project
 
 Use the explicit project, environment file and MySQL TLS overlay so commands do
