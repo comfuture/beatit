@@ -1,0 +1,180 @@
+"""Deploy once: uv run modal deploy scripts/modal_app.py.
+
+The dependency image is cached independently of source changes. Weights are prepared
+on CPU into a persistent Volume by default; BEATIT_MODAL_MODEL_STORAGE=image bakes
+them into a cached build layer instead. Neither path downloads models on a GPU.
+"""
+
+import os
+from pathlib import Path
+
+import modal
+
+from transcription.modal_config import (
+    APP_NAME,
+    CACHE_ENV,
+    GPU,
+    JOB_DIR,
+    JOB_VOLUME,
+    MODEL_DIR,
+    MODEL_STORAGE,
+    MODEL_VOLUME,
+    PROGRESS_DICT,
+)
+
+ROOT = Path(__file__).resolve().parents[1]
+if MODEL_STORAGE not in {"volume", "image"}:
+    raise ValueError("BEATIT_MODAL_MODEL_STORAGE must be volume or image")
+
+app = modal.App(APP_NAME)
+models = modal.Volume.from_name(MODEL_VOLUME, create_if_missing=True, version=2)
+jobs = modal.Volume.from_name(JOB_VOLUME, create_if_missing=True, version=2)
+progress = modal.Dict.from_name(PROGRESS_DICT, create_if_missing=True)
+
+image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .apt_install("ffmpeg", "git", "build-essential", "pkg-config", "libopus-dev", "libgomp1")
+    .workdir("/opt/beatit")
+    .uv_sync(str(ROOT), extras=["cuda"], frozen=True, extra_options="--no-dev", uv_version="0.9.26")
+    .env(
+        {
+            **CACHE_ENV,
+            "BEATIT_MODAL_APP": APP_NAME,
+            "BEATIT_MODAL_GPU": GPU,
+            "BEATIT_MODAL_MODEL_STORAGE": MODEL_STORAGE,
+            "PYTHONUNBUFFERED": "1",
+            "OMP_NUM_THREADS": "2",
+            "OPENBLAS_NUM_THREADS": "2",
+            "MKL_NUM_THREADS": "2",
+            "NUMBA_NUM_THREADS": "2",
+        }
+    )
+)
+if MODEL_STORAGE == "image":
+    # Only model-preparation code precedes this layer; UI/pipeline edits reuse weights.
+    for name in (
+        "__init__.py",
+        "modal_config.py",
+        "modal_models.py",
+        "detection.py",
+        "drumsep.py",
+        "rhythm.py",
+    ):
+        image = image.add_local_file(
+            ROOT / "src/transcription" / name,
+            "/opt/model-source/transcription/" + name,
+            copy=True,
+        )
+    image = image.env({"PYTHONPATH": "/opt/model-source"}).run_commands(
+        "python -m transcription.modal_models"
+    )
+
+# Source is mounted after the expensive dependency/model layers, without rebuilding them.
+image = image.env({"PYTHONPATH": "/opt/beatit/src"}).add_local_dir(
+    ROOT / "src/transcription",
+    "/opt/beatit/src/transcription",
+    ignore=["static", "__pycache__"],
+)
+model_mounts = {MODEL_DIR: models} if MODEL_STORAGE == "volume" else {}
+
+
+@app.function(
+    image=image,
+    volumes=model_mounts,
+    timeout=1800,
+    max_containers=1,
+    cpu=2,
+    memory=8192,
+    scaledown_window=2,
+)
+def prepare_models():
+    from transcription.modal_models import prepare_models as prepare
+
+    if MODEL_STORAGE == "volume":
+        models.reload()
+    manifest = prepare()
+    if MODEL_STORAGE == "volume":
+        models.commit()
+    return {**manifest, "storage": MODEL_STORAGE}
+
+
+@app.function(
+    image=image,
+    gpu=GPU,
+    volumes={JOB_DIR: jobs, **model_mounts},
+    timeout=7200,
+    max_containers=1,
+    min_containers=0,
+    cpu=2,
+    memory=8192,
+    scaledown_window=2,
+    retries=0,
+)
+def transcribe(job: str, attempt: str):
+    import json
+    import shutil
+    import subprocess
+    import sys
+    import tempfile
+    import time
+
+    from transcription.colab_artifacts import pack_output, save_json, unpack_input, valid_identifier
+    from transcription.modal_models import model_manifest
+
+    if not valid_identifier(job) or not valid_identifier(attempt):
+        raise ValueError("Invalid job or attempt identifier")
+    if MODEL_STORAGE == "volume":
+        models.reload()
+    if not model_manifest():
+        raise RuntimeError("Prepare the Modal model cache before allocating a GPU")
+    key = job + "/" + attempt
+    jobs.reload()
+    shared = Path(JOB_DIR) / key
+    started = time.monotonic()
+    with tempfile.TemporaryDirectory(prefix="beatit-") as scratch:
+        directory = Path(scratch)
+        unpack_input(shared / "input.zip", directory)
+        request = json.loads((directory / "request.json").read_text())
+        request["options"].update(device="cuda", renderer="verovio")
+        save_json(directory / "request.json", request)
+        process = subprocess.Popen(
+            [sys.executable, "-u", "-m", "transcription.worker", str(directory)],
+            env={**os.environ, "DRUM_EXECUTION_BACKEND": "local", "HF_HUB_OFFLINE": "1"},
+        )
+        try:
+            while True:
+                if (directory / "progress.json").is_file():
+                    progress[key] = json.loads((directory / "progress.json").read_text())
+                if process.poll() is not None:
+                    break
+                time.sleep(1)
+            if process.returncode:
+                error = directory / "error.json"
+                message = (
+                    json.loads(error.read_text())["message"]
+                    if error.is_file()
+                    else "Inference failed"
+                )
+                raise RuntimeError(message)
+            pack_output(directory, directory / "result.zip")
+            shutil.copyfile(directory / "result.zip", shared / "result.zip")
+            jobs.commit()
+            return {
+                "gpu": GPU,
+                "model_storage": MODEL_STORAGE,
+                "elapsed_seconds": round(time.monotonic() - started, 2),
+            }
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+
+
+@app.local_entrypoint()
+def main():
+    """Populate/check the CPU model cache without starting a GPU."""
+    print(prepare_models.remote())

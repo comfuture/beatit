@@ -1,0 +1,16 @@
+# Optional file-backed credentials. Plain env credentials are also supported by compose.yaml.
+services:
+  beatit:
+    environment:
+      DRUM_EXECUTION_BACKEND: modal
+      MODAL_TOKEN_ID_FILE: /run/secrets/modal_token_id
+      MODAL_TOKEN_SECRET_FILE: /run/secrets/modal_token_secret
+    secrets:
+      - modal_token_id
+      - modal_token_secret
+
+secrets:
+  modal_token_id:
+    file: ${BEATIT_MODAL_TOKEN_ID_FILE:?Set a protected Modal token ID file}
+  modal_token_secret:
+    file: ${BEATIT_MODAL_TOKEN_SECRET_FILE:?Set a protected Modal token secret file}

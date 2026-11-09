@@ -147,6 +147,7 @@ def test_cached_revision_can_enable_and_disable_refinement_without_inference(tmp
 
 @pytest.mark.parametrize("status", ["failed", "cancelled"])
 def test_retry_initial_refinement_resumes_from_onset_and_tempo_cache(tmp_path, monkeypatch, status):
+    monkeypatch.setenv("DRUM_EXECUTION_BACKEND", "local")
     from transcription import pipeline, tom_refinement
     from transcription.app import create_app
 

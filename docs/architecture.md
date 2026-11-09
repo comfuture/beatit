@@ -9,6 +9,13 @@ locked uv environment keep the web server and both inference models in one runti
 Model work runs in a separate process, with one queued job at a time to bound GPU
 memory. SQLite stores job metadata; each job has its own media and output directory.
 
+Processing defaults to local; this deployment explicitly selects Modal.
+`DRUM_EXECUTION_BACKEND` or `serve --engine` selects
+Modal, the retained local pipeline, or the retained Colab controller at service startup.
+Modal reuses a locked dependency image and CPU-prepared model Volume; image-baked
+weights are optional. Original uploads and validated outputs stay on the application
+host. See [Modal deployment and model-storage decision](modal-deployment.md).
+
 ## Source separation
 
 - [adefossez/demucs](https://github.com/adefossez/demucs), PyPI 4.1.0, MIT.

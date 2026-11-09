@@ -44,6 +44,16 @@ class JobStore:
             raise RuntimeError(
                 "이 데이터 디렉토리에서 이미 서버가 실행 중입니다. 서버는 한 프로세스로 실행하세요."
             ) from None
+        # A hard stop may have killed the RPC client before its cancellation handler.
+        from .modal_worker import CALL_FILE, cancel_record
+
+        for record in self.root.glob("*/" + CALL_FILE):
+            try:
+                cancel_record(record.parent)
+            except Exception:
+                import logging
+
+                logging.exception("Could not cancel an interrupted Modal call")
         with self.connect() as connection:
             connection.execute(
                 "UPDATE jobs SET status='failed', error='서버가 중단되었습니다. 다시 시도하세요.' WHERE status='running'"

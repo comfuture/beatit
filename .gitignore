@@ -5,6 +5,10 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 .env
+.env.*
+!.env.example
+secrets/
+.modal.toml
 data/
 work/
 backups/

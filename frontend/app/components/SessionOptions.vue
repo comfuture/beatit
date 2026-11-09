@@ -94,8 +94,8 @@ function numberValue(value: string | number): number | null {
                 :items="[
                   { label: '자동 선택', value: 'auto' },
                   ...(system?.devices || ['cpu']).map((d) => ({
-                    label: system?.execution_backend === 'colab' && d === 'cuda'
-                      ? 'Colab GPU · CUDA'
+                    label: system?.execution_backend !== 'local' && system?.execution_backend && d === 'cuda'
+                      ? `${system.execution_label} · CUDA`
                       : d.toUpperCase(),
                     value: d,
                   })),
@@ -119,7 +119,7 @@ function numberValue(value: string | number): number | null {
                 v-model="model.renderer"
                 :items="[
                   { label: '자동 선택', value: 'auto' },
-                  { label: 'MuseScore', value: 'musescore' },
+                  { label: 'MuseScore', value: 'musescore', disabled: !system?.musescore },
                   { label: 'Verovio', value: 'verovio' },
                 ]"
                 aria-label="악보 렌더러"

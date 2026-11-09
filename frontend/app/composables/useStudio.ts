@@ -8,7 +8,7 @@ import {
 } from "~/types/studio";
 import { validateOptions } from "~/utils/rhythm";
 import { mergeBeatReview, reviewAfterEdit } from "~/utils/beatReview";
-import { colabConnectionUnavailable, runtimeStatus } from "~/utils/execution";
+import { connectionUnavailable, runtimeStatus } from "~/utils/execution";
 
 export function useStudio() {
   const jobs = ref<Job[]>([]);
@@ -227,7 +227,7 @@ export function useStudio() {
   }
   async function upload() {
     if (!selectedFile.value || busy.value || !system.value?.ffmpeg) return;
-    if (colabConnectionUnavailable(system.value)) {
+    if (connectionUnavailable(system.value)) {
       error.value = runtimeStatus(system.value);
       return;
     }

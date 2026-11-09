@@ -3,6 +3,17 @@ import type { SystemInfo } from "~/types/studio";
 export const isColabExecution = (system: SystemInfo | null) =>
   system?.execution_backend === "colab";
 
+export const isRemoteExecution = (system: SystemInfo | null) =>
+  system?.execution_backend === "modal" || isColabExecution(system);
+
+export function connectionUnavailable(system: SystemInfo | null): boolean {
+  if (system?.execution_backend === "modal") {
+    return !system.remote_runtime?.can_allocate ||
+      ["unavailable", "error"].includes(system.remote_runtime.state);
+  }
+  return colabConnectionUnavailable(system);
+}
+
 export function colabConnectionUnavailable(system: SystemInfo | null): boolean {
   if (!isColabExecution(system)) return false;
   const runtime = system?.remote_runtime;
@@ -12,6 +23,11 @@ export function colabConnectionUnavailable(system: SystemInfo | null): boolean {
 }
 
 export function runtimeStatus(system: SystemInfo | null): string {
+  if (system?.execution_backend === "modal") {
+    if (connectionUnavailable(system))
+      return system.remote_runtime?.manager_error || "Modal 연결 확인 필요";
+    return "분석 시 Modal GPU 자동 시작";
+  }
   if (!isColabExecution(system)) return "";
   const runtime = system?.remote_runtime;
   if (!runtime) return "Colab GPU 상태 확인 중";

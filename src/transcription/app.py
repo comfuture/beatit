@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .colab_worker import execution_capabilities
+from .execution import default_engine, execution_capabilities
 from .models import Options, Revision, ScoreMetadata
 from .pipeline import MAX_DURATION, save_json
 from .runtime import capabilities
@@ -40,11 +40,7 @@ MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(1024**3)))
 
 
 def upload_limit():
-    return (
-        min(MAX_UPLOAD, 120 * 1024**2)
-        if os.environ.get("DRUM_EXECUTION_BACKEND") == "colab"
-        else MAX_UPLOAD
-    )
+    return min(MAX_UPLOAD, 120 * 1024**2) if default_engine() == "colab" else MAX_UPLOAD
 
 
 JOB_AUDIO = {"audio.wav", "drums.wav"} | {
@@ -123,11 +119,14 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
                     for item in error.errors()
                 ],
             ) from None
-        if os.environ.get("DRUM_EXECUTION_BACKEND") == "colab" and parsed.device not in {
+        engine = default_engine()
+        if engine in {"colab", "modal"} and parsed.device not in {
             "auto",
             "cuda",
         }:
-            raise HTTPException(422, "Colab 분석은 자동 선택 또는 CUDA 장치를 사용하세요.")
+            raise HTTPException(422, "원격 분석은 자동 선택 또는 CUDA 장치를 사용하세요.")
+        if engine in {"colab", "modal"} and parsed.renderer == "musescore":
+            raise HTTPException(422, "원격 분석은 자동 선택 또는 Verovio 렌더러를 사용하세요.")
         identifier = uuid4().hex
         directory = store.directory(identifier)
         directory.mkdir()
@@ -142,7 +141,8 @@ def create_app(data_root: Path | None = None, start_worker: bool = True) -> Fast
             if size == 0:
                 raise HTTPException(400, "빈 파일은 분석할 수 없습니다.")
             save_json(
-                directory / "request.json", {"filename": filename, "options": parsed.model_dump()}
+                directory / "request.json",
+                {"filename": filename, "options": parsed.model_dump()},
             )
             store.add(identifier, filename)
         except BaseException:

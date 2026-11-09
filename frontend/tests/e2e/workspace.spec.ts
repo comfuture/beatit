@@ -52,8 +52,9 @@ function sampleJob() {
     },
   };
 }
-async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, events = initialEvents as DrumEvent[], audioTone = false, colab = false, serverManaged = false } = {}) {
+async function setup(page: Page, { multiPage = false, layoutUnavailable = false, offset = 0, events = initialEvents as DrumEvent[], audioTone = false, colab = false, serverManaged = false, modal = false } = {}) {
   const colabExecution = colab || serverManaged;
+  const remoteExecution = colabExecution || modal;
   let job = sampleJob();
   job.result.grid.offset = offset;
   job.result.options.offset = offset;
@@ -66,8 +67,8 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
   let jobEvents = structuredClone(events);
   let systemRequests = 0;
   const runtime: NonNullable<SystemInfo["remote_runtime"]> = {
-    state: serverManaged ? "idle" : "ready", accelerator: "T4", prepared: !serverManaged, idle_timeout_seconds: 600,
-    ...(serverManaged ? { allocation_mode: "server", can_allocate: true, manager_error: null } : {}),
+    state: serverManaged || modal ? "idle" : "ready", accelerator: "T4", prepared: !serverManaged && !modal, idle_timeout_seconds: modal ? 2 : 600,
+    ...(serverManaged || modal ? { allocation_mode: "server", can_allocate: true, manager_error: null } : {}),
   };
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -78,10 +79,10 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       systemRequests++;
       return route.fulfill({
         json: {
-          devices: colabExecution ? ["cuda"] : ["cpu"],
-          default_device: colabExecution ? "cuda" : "cpu",
-          ...(colabExecution ? {
-            execution_backend: "colab", execution_label: "Google Colab GPU",
+          devices: remoteExecution ? ["cuda"] : ["cpu"],
+          default_device: remoteExecution ? "cuda" : "cpu",
+          ...(remoteExecution ? {
+            execution_backend: modal ? "modal" : "colab", execution_label: modal ? "Modal GPU" : "Google Colab GPU",
             remote_runtime: { ...runtime },
           } : {}),
           ffmpeg: true,
@@ -101,9 +102,9 @@ async function setup(page: Page, { multiPage = false, layoutUnavailable = false,
       expect(route.request().postDataBuffer()?.toString()).toContain('"tom_refinement":true');
       job.status = "running";
       job.progress = {
-        stage: serverManaged ? "allocating" : colabExecution ? "preparing" : "separating",
-        progress: colabExecution ? 0.03 : 0.42,
-        message: serverManaged ? "Colab GPU 할당 중" : colabExecution ? "Colab 실행 환경 준비 중" : "드럼 분리 중",
+        stage: serverManaged || modal ? "allocating" : colabExecution ? "preparing" : "separating",
+        progress: remoteExecution ? 0.03 : 0.42,
+        message: modal ? "준비된 Modal 이미지에서 GPU를 시작합니다." : serverManaged ? "Colab GPU 할당 중" : colabExecution ? "Colab 실행 환경 준비 중" : "드럼 분리 중",
       };
       if (serverManaged) runtime.state = "allocating";
       (job as any).result = undefined;
@@ -250,6 +251,34 @@ async function openSession(page: Page) {
     page.getByRole("region", { name: "드럼 비트 편집기" }),
   ).toBeVisible();
 }
+
+test("Modal starts on demand with service configuration and no engine selector", async ({ page }) => {
+  await setup(page, { modal: true });
+  await expect(page.locator(".brand-version")).toHaveText("MODAL");
+  await expect(page.locator(".sidebar-footer strong")).toHaveText("Modal GPU");
+  await expect(page.locator(".source-notes")).toContainText("Modal GPU에서 분석합니다");
+  await expect(page.getByLabel("프로세싱 엔진")).toHaveCount(0);
+  await expect(page.locator(".source-panel").getByRole("status")).toHaveText("분석 시 Modal GPU 자동 시작");
+  await page.getByLabel("소스 파일 선택").setInputFiles({
+    name: "input.wav", mimeType: "audio/wav", buffer: Buffer.from("test audio"),
+  });
+  await expect(page.getByRole("button", { name: "분석 시작", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "분석 시작", exact: true }).click();
+  await expect(page.locator(".processing-workspace .process-stage.active strong")).toHaveText("Modal GPU 준비");
+  await expect(page.locator(".processing-workspace")).toContainText("준비된 Modal 이미지에서 GPU를 시작합니다.");
+});
+
+test("Modal unavailable status prevents a new transcription", async ({ page }) => {
+  const state = await setup(page, { modal: true });
+  state.runtime("unavailable");
+  await page.reload();
+  await page.getByLabel("소스 파일 선택").setInputFiles({
+    name: "input.wav", mimeType: "audio/wav", buffer: Buffer.from("test audio"),
+  });
+  await expect(page.locator(".source-panel").getByRole("status")).toHaveText("Modal 연결 확인 필요");
+  await expect(page.getByRole("button", { name: "분석 시작", exact: true })).toBeDisabled();
+  await expect(page.locator(".sidebar-footer .engine-indicator")).not.toHaveClass(/online/);
+});
 
 test("Colab execution shows processing location, refreshed readiness and remote progress", async ({ page }) => {
   const state = await setup(page, { colab: true });

@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 from transcription.app import create_app
 
 
-def test_upload_history_cancel_and_delete(tmp_path):
+def test_upload_history_cancel_and_delete(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRUM_EXECUTION_BACKEND", "local")
     with TestClient(create_app(tmp_path, start_worker=False)) as client:
         response = client.post(
             "/api/jobs",
