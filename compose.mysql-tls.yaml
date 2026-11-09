@@ -1,5 +1,8 @@
 # Optional CA mount for a managed OCI MySQL endpoint with its own CA.
 # The connection URL must include ?ssl_ca=/run/secrets/mysql_ca.
+# For OCI-generated certificates with a mismatched hostname, explicitly append
+# &ssl_mode=VERIFY_CA; certificate-chain validation stays mandatory.
+# Otherwise use VERIFY_IDENTITY (the default) for chain + hostname verification.
 services:
   beatit:
     secrets:

@@ -39,9 +39,16 @@ lists the unverified production checkpoints.
 Ordered, restart-safe SQL migrations live in `src/transcription/migrations/`.
 Startup serializes migrations with a database-scoped MySQL named lock. Application
 connections use a bounded SQLAlchemy QueuePool with PyMySQL, UTF-8, UTC and READ
-COMMITTED isolation. Remote connections validate TLS; supply the OCI CA with
-`?ssl_ca=/absolute/path/to/mysql-ca.pem` if needed. Loopback is permitted for the
-development Access TCP tunnel and disposable test database.
+COMMITTED isolation. Remote connections default to `VERIFY_IDENTITY`: TLS must
+validate both the server certificate chain and its hostname. Supply a private CA
+with `?ssl_ca=/absolute/path/to/mysql-ca.pem` when needed. For an OCI-generated
+certificate whose name does not match the private or tunnel hostname, explicitly
+select `?ssl_ca=/absolute/path/to/mysql-ca.pem&ssl_mode=VERIFY_CA`. This mode requires
+the pinned CA and verifies the certificate chain while omitting hostname matching.
+It does not allow unverified certificates. `DISABLED`, `PREFERRED`, `REQUIRED` and
+unknown modes are rejected. See [MySQL connection verification modes](https://dev.mysql.com/doc/refman/8.4/en/connection-options.html).
+Loopback without CA/mode settings remains permitted for disposable local databases;
+adding either supported verification mode forces verified TLS there as well.
 
 Users are keyed by Google's verified stable `sub`, not email. Projects and jobs
 have mandatory owners and composite owner/project foreign keys. Requests/options,
@@ -82,8 +89,12 @@ only the leased worker may run inference.
    cloudflared access tcp --hostname MYSQL_ACCESS_HOST --url 127.0.0.1:13306
    ```
 
-   Set `BEATIT_DATABASE_URL=mysql://beatit:URL_ENCODED_PASSWORD@127.0.0.1:13306/beatit`
-   on the Mac. chunsik should use the private OCI hostname and verified TLS.
+   Set the Mac connection URL to
+   `mysql://beatit:URL_ENCODED_PASSWORD@127.0.0.1:13306/beatit?ssl_ca=/absolute/path/to/mysql-ca.pem&ssl_mode=VERIFY_CA`
+   when the OCI-generated certificate is signed by that CA but names neither the
+   loopback endpoint nor the private hostname. chunsik should use the private OCI
+   address with the same pinned CA. Prefer `VERIFY_IDENTITY` whenever the
+   certificate matches the connection hostname.
    Do not put DB credentials in browser JavaScript or Cloudflare DNS records.
 3. Prepare a private R2 bucket and a server-side S3 credential limited to that
    bucket. Keep public access disabled. The S3 adapter also supports other private
@@ -177,7 +188,9 @@ Keep the provider's native MySQL backup/PITR policy as an additional layer.
 Compose passes required auth, database and object configuration explicitly.
 `data` is now scratch; the model-cache volume remains a cache. If OCI uses its own
 CA, include `compose.mysql-tls.yaml`, set `BEATIT_MYSQL_CA_FILE` and use
-`ssl_ca=/run/secrets/mysql_ca` in the connection URL.
+`ssl_ca=/run/secrets/mysql_ca` in the connection URL. Add `&ssl_mode=VERIFY_CA`
+only for a CA-verified OCI certificate with a mismatched hostname; otherwise keep
+`VERIFY_IDENTITY` (the default).
 
 Prepare the `beatit.changkyun.kim` DNS/Cloudflare Tunnel HTTPS route to the private
 chunsik listener and set `BEATIT_ALLOWED_HOSTS=beatit.changkyun.kim,localhost`.
