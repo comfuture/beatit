@@ -202,7 +202,14 @@ def rpc(tmp_path, monkeypatch):
     progress = {}
     monkeypatch.setattr(modal_worker, "function", function)
     monkeypatch.setattr(modal_worker, "volume", lambda _: volume)
-    monkeypatch.setattr(modal_worker.modal.Dict, "from_name", lambda *args, **kwargs: progress)
+
+    def progress_dict(*args, **kwargs):
+        # A new deployment has no Dict until the client or remote function creates it.
+        if not kwargs.get("create_if_missing"):
+            raise modal_worker.modal.exception.NotFoundError("Progress Dict does not exist")
+        return progress
+
+    monkeypatch.setattr(modal_worker.modal.Dict, "from_name", progress_dict)
     published = []
 
     def publish(archive, directory, provenance, *, backend):

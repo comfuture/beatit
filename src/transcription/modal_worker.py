@@ -105,7 +105,9 @@ def run(directory: Path):
     transferred = False
     phase_seconds = {}
     jobs = volume(JOB_VOLUME)
-    progress = modal.Dict.from_name(PROGRESS_DICT, environment_name=ENVIRONMENT)
+    progress = modal.Dict.from_name(
+        PROGRESS_DICT, environment_name=ENVIRONMENT, create_if_missing=True
+    )
 
     def report(stage, fraction, message):
         save_json(
