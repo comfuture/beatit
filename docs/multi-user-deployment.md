@@ -90,10 +90,19 @@ the SQL transaction that publishes the manifests and completed revision. A faile
 upload or lost lease cannot replace the previous published score. Downloads,
 media ranges, waveform and layout all require an authenticated owner check and
 load only manifested objects. Browser responses are private/no-store. There are
-no public bucket URLs or reusable bearer download links. Unreferenced uploads
-after an aborted transaction can remain in storage; retain them until a
-manifest-aware reconciliation, and do not apply an arbitrary age-based bucket
-expiry rule to live artifacts.
+no public bucket URLs or reusable bearer download links. Project captures and
+playback-preview PUTs enter a durable `pending_object_uploads` journal before
+uploading. Two dedicated upload connections hold per-object MySQL session locks,
+so long transfers do not reserve the API/authentication/heartbeat pool. Publication
+locks each staged record and atomically replaces it with its committed artifact
+reference. Rejected admissions make completed uploads eligible for cleanup; hard
+crashes or database outages retain the journal for conservative recovery after
+24 hours. Uncertain storage failures retain a five-minute grace period. The
+collector skips in-flight upload locks and checks committed references under the
+same publication fence before deleting bytes. A collector that wins the race
+prevents a late publisher from referencing the removed key. Reused objects must
+still have a committed reference. Do not apply an arbitrary bucket expiry rule
+to live artifacts; orphan cleanup uses this manifest-aware journal instead.
 
 One global SQL worker slot preserves the initial single inference worker. Claims,
 heartbeats, cancellation and result publication use unique attempt tokens and

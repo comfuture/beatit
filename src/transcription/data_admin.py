@@ -282,6 +282,7 @@ def restore_backup(store, source: Path, *, app_stopped=False):
                     "oauth_states",
                     "object_garbage",
                     "remote_calls",
+                    "pending_object_uploads",
                 ):
                     if connection.execute(f"SELECT 1 FROM beatit.{table} LIMIT 1").fetchone():
                         raise ValueError(
