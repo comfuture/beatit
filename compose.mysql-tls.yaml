@@ -1,0 +1,10 @@
+# Optional CA mount for a managed OCI MySQL endpoint with its own CA.
+# The connection URL must include ?ssl_ca=/run/secrets/mysql_ca.
+services:
+  beatit:
+    secrets:
+      - mysql_ca
+
+secrets:
+  mysql_ca:
+    file: ${BEATIT_MYSQL_CA_FILE:?Set the absolute path to the MySQL CA certificate}

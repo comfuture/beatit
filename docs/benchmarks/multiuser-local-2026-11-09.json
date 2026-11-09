@@ -1,0 +1,50 @@
+{
+  "environment": "local MySQL8.4 plus HTTP S3 emulator; not OCI/R2",
+  "result": {
+    "database": {
+      "engine": "mysql",
+      "version": "8.4.13",
+      "select_ms": 1.274,
+      "locking_transaction_ms": 1.112
+    },
+    "objects": {
+      "bytes": 4096,
+      "sha256_match": true,
+      "put_get_delete_ms": 28.515
+    }
+  },
+  "date": "2026-11-09",
+  "python_full_suite": {
+    "passed": 242,
+    "seconds": 90.63,
+    "note": "before final parent-death watchdog and S3 upload-wrapper regression additions; final focused tests recorded in PR"
+  },
+  "frontend": {
+    "typecheck": "passed",
+    "unit_tests": 45,
+    "browser_tests": 51,
+    "auth_provider": "mocked in browser tests",
+    "browser_duration_reported": "1.8m"
+  },
+  "google_live_metadata": {
+    "discovery_and_authorization_redirect_status": 302,
+    "pkce_s256": true,
+    "authenticated_callback": "not exercised"
+  },
+  "production": {
+    "oci_mysql_connection": "pending credentials",
+    "r2_roundtrip": "pending credentials",
+    "https_dns": "pending setup",
+    "two_real_google_accounts": "pending deployed smoke"
+  },
+  "python_final_focused": {
+    "passed": 52,
+    "seconds": 18.98,
+    "covers": [
+      "parent-death subprocesses",
+      "persistence and object garbage collection",
+      "Modal recovery",
+      "all owner-scoped API and S3 transfer-wrapper errors"
+    ]
+  }
+}
